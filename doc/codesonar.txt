@@ -88,6 +88,12 @@ The commands need a running server, so use them in a file of the workspace.
 			q <Esc>			close
 		Moving the cursor closes it as well.
 
+:CodeSonarConf                                                *:CodeSonarConf*
+		Open the configuration file of the CodeSonar project in a
+		split, e.g. to add WARNING_FILTER rules. If there is none yet,
+		it is created from the template.conf of CodeSonar, as the
+		first analysis would.
+
 :CodeSonarConnect [url [user]]                            *:CodeSonarConnect*
 		Sign in to a hub, asking for the password, and choose one of
 		its projects. Without arguments the configured hub is used.
@@ -144,6 +150,7 @@ CodeSonarExplainHint		key hints (Comment)
 ==============================================================================
 4. SETTINGS                                                *codesonar-settings*
 
+                                                              *g:codesonar*
 g:codesonar holds the settings of the server, see the README of
 codesonar-lsp, and these settings of the plugin:
 
@@ -167,5 +174,9 @@ changed		Warnings in code changed since the analysis: "hide" (the
 		default) or "mark" to show them as hints.
 analyze.buildCommand
 		Build command of |:CodeSonarAnalyze|. Default: "make -B".
+analyze.projectFile
+		Project prefix, relative to the workspace: CodeSonar names the
+		project files after it, e.g. "prefix.conf". Default:
+		".codesonar/project".
 
  vim:tw=78:ts=8:noet:ft=help:norl:

@@ -613,3 +613,17 @@ export def Explain()
 
   Execute(EXPLAIN, argument, ShowExplanations)
 enddef
+
+def OpenConf(project: dict<any>)
+  execute 'split' fnameescape(project.conf)
+
+  if project.created
+    Message($'Created {project.conf} from the CodeSonar template')
+  endif
+enddef
+
+# Opens the configuration file of the project, created from CodeSonar's
+# template if there is none yet.
+export def Conf()
+  Execute('codesonar.project', {createConf: true}, OpenConf)
+enddef
