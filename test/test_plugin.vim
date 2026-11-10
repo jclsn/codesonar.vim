@@ -21,6 +21,9 @@ mkdir(INSTALL .. '/bin', 'p')
 filecopy($'{helpers.DIR}/fake_codesonar.sh', INSTALL .. '/bin/codesonar')
 setfperm(INSTALL .. '/bin/codesonar', 'rwx------')
 writefile(['# CodeSonar template'], INSTALL .. '/template.conf')
+mkdir(INSTALL .. '/presets')
+writefile(['# CERT rules'], INSTALL .. '/presets/cert.conf')
+writefile(['# MISRA C:2025 rules'], INSTALL .. '/presets/misrac2025.conf')
 
 const HUB = helpers.StartHub($'{helpers.FIXTURES}/test_project.sarif', WORKSPACE)
 
@@ -237,6 +240,34 @@ def g:Test_7_highlights_code_numbers_and_links()
   id->popup_close()
 enddef
 
+def g:Test_7a_chooses_presets()
+  Open('main.c')
+  assert_equal(['misrac2025'], getcompletion('CodeSonarPresets m', 'cmdline'))
+
+  var shown = Status()
+
+  CodeSonarPresets
+  var id = Popup()
+  assert_equal(['[ ] cert        CERT rules', '[ ] misrac2025  MISRA C:2025 rules'], PopupLines(id))
+  # Only the names are highlighted, ticked ones differently.
+  var props = prop_list(1, {bufnr: winbufnr(id)})
+  assert_equal([{col: 5, length: 4, type: 'CodeSonarPresetName'}],
+    props->mapnew((_, p) => ({col: p.col, length: p.length, type: p.type})))
+
+  feedkeys("j ", 'xt')
+
+  assert_equal('[x] misrac2025  MISRA C:2025 rules', PopupLines(id)[1])
+  assert_equal(['CodeSonarPresetTicked'], prop_list(2, {bufnr: winbufnr(id)})->mapnew((_, p) => p.type))
+  feedkeys("\<CR>", 'xt')
+  assert_equal(['misrac2025'], g:codesonar.analyze.presets)
+  assert_match('Analyses use the presets misrac2025', execute('messages'))
+
+  CodeSonarPresets cert misrac2025
+  assert_equal(['cert', 'misrac2025'], g:codesonar.analyze.presets)
+  sleep 200m
+  assert_true(Status() is shown, 'the analysis is not loaded again')
+enddef
+
 def g:Test_8_runs_an_analysis_in_a_split()
   Open('main.c')
 
@@ -249,7 +280,10 @@ def g:Test_8_runs_an_analysis_in_a_split()
   var args = readfile(LOG)
   assert_equal(['analyze', $'{WORKSPACE}/.codesonar/project', '-foreground'], args[: 2])
   assert_true(args->index('from vim') > 0)
+  assert_equal(['-preset', 'cert', '-preset', 'misrac2025'],
+    args[args->index('-preset') : args->index('-preset') + 3])
   assert_equal([HUB, 'make'], args[-2 :])
+
   helpers.WaitFor(() => filereadable(LOG .. '.pw'))
   assert_equal(['secret'], readfile(LOG .. '.pw'))
   assert_equal(['600'], readfile(LOG .. '.mode'))
