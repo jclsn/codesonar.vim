@@ -14,7 +14,5 @@ syntax match CodeSonarExplainLocation /\<[[:alnum:]_.\/-]\+\.\a\+:\d\+\>/
 syntax region CodeSonarExplainCode matchgroup=Conceal start=/`/ end=/`/ concealends oneline
 syntax region CodeSonarExplainBold matchgroup=Conceal start=/\*\*/ end=/\*\*/ concealends oneline
 syntax match CodeSonarExplainUrl /\<\%(https\=\|ftp\|file\):\/\/[^[:space:]<>"`)\]]\+/
-# Markdown links show their text only.
-syntax region CodeSonarExplainLink matchgroup=Conceal start=/\[\ze[^]]\+](/ end=/](\%([^()]\|([^()]*)\)*)/ concealends oneline
 
 b:current_syntax = 'codesonarexplain'

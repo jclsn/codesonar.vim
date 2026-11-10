@@ -78,8 +78,10 @@ The commands need a running server, so use them in a file of the workspace.
 
 :CodeSonarExplain                                          *:CodeSonarExplain*
 		Explain the warnings in the cursor line in a popup, like the
-		"Show details" code action. Other popups are closed. In the
-		popup:
+		"Show details" code action: the message, the events that
+		lead to the warning, numbered as on the hub, and the rules of
+		coding standards it may violate. The titles of the rules come
+		from the hub. Other popups are closed. In the popup:
 			j k <C-D> <C-U> g G	scroll
 			o			open the warning on the hub
 			d			open the documentation
@@ -125,12 +127,11 @@ The explanation popup uses these highlight groups, linked by default to the
 group in parentheses:
 
 CodeSonarExplainTitle		warning class (Title)
-CodeSonarExplainRule		warning class id (Identifier)
+CodeSonarExplainRule		ids of warning classes and rules (Identifier)
 CodeSonarExplainHeading		headings (Statement)
 CodeSonarExplainLabel		link labels (Statement)
 CodeSonarExplainChanged		note on changed code (WarningMsg)
 CodeSonarExplainUrl		URLs (Underlined)
-CodeSonarExplainLink		Markdown links, without their URL (Underlined)
 CodeSonarExplainFunction	function calls like printf() (Function)
 CodeSonarExplainNumber		numbers (Number)
 CodeSonarExplainQuoted		quoted names like 'p' (String)

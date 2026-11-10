@@ -17,7 +17,6 @@ const HIGHLIGHTS = {
   Separator: 'NonText',
   Hint: 'Comment',
   Url: 'Underlined',
-  Link: 'Underlined',
   Function: 'Function',
   Number: 'Number',
   Quoted: 'String',
@@ -29,6 +28,8 @@ const SCROLL = {
   j: "\<C-E>", k: "\<C-Y>", "\<Down>": "\<C-E>", "\<Up>": "\<C-Y>",
   "\<C-D>": "\<C-D>", "\<C-U>": "\<C-U>", g: 'gg', G: 'G',
 }
+# The start of event, rule and link lines: wrapped lines are indented by it.
+const LIST_PATTERN = '^\s*\%(\d\+\s\+\)\=\S\+:\S\+\s\+\|^\a\+\s\{2,}\|^-\s\+'
 # The parts of explanations that are text properties, not syntax.
 const PROPS = ['Title', 'Rule', 'Heading', 'Label', 'Changed', 'Separator', 'Hint']
 
@@ -418,6 +419,62 @@ def FileName(uri: string): string
 enddef
 
 # The lines of one explanation, see codesonar.explain of the server.
+# Markdown links as their text: CodeSonar's URLs are too long to read.
+def LinkTexts(text: string): string
+  return text->substitute('\[\([^]]\+\)\](\%([^()]\|([^()]*)\)*)', '\1', 'g')
+enddef
+
+def Paragraphs(text: string): list<dict<any>>
+  return LinkTexts(text)->split("\n", true)->mapnew((_, l) => Line([[l, '']]))
+enddef
+
+def Section(heading: string, lines: list<dict<any>>): list<dict<any>>
+  return lines->empty() ? [] : [Line([]), Line([[heading, 'Heading']])] + lines
+enddef
+
+# The events on the path to the warning, numbered as on the hub and
+# indented by call depth.
+def EventLines(events: list<dict<any>>): list<dict<any>>
+  return events->mapnew((_, e) => Line([
+    [printf('%3s  ', type(e.number) == v:t_number ? e.number : ''), ''],
+    [repeat('  ', e.depth), ''],
+    [$'{FileName(e.uri)}:{e.line}', ''],
+    [$'  {e.message}', ''],
+  ]))
+enddef
+
+# Whether the warning may be a symptom of an earlier violation of the rule.
+def IsSymptom(rule: dict<any>): bool
+  return type(rule.relationship) == v:t_string && rule.relationship ==# 'follows'
+enddef
+
+# The rules with titles as a table, else their ids in one line.
+def RuleLines(rules: list<dict<any>>): list<dict<any>>
+  if rules->empty()
+    return []
+  endif
+
+  if rules->indexof((_, r) => type(r.title) == v:t_string) < 0
+    var parts: list<list<string>> = [['  ', '']]
+
+    for rule in rules
+      parts += [[rule.id, 'Rule'], [rule is rules[-1] ? '' : ', ', '']]
+    endfor
+
+    return [Line(parts)]
+  endif
+
+  var width = rules->mapnew((_, r) => strdisplaywidth(r.id))->max()
+
+  return rules->mapnew((_, r) => Line([
+    ['  ', ''],
+    [r.id, 'Rule'],
+    [repeat(' ', width - strdisplaywidth(r.id) + 2), ''],
+    [type(r.title) == v:t_string ? r.title : '', ''],
+  ]))
+enddef
+
+# The lines of one explanation, see codesonar.explain of the server.
 def ExplanationLines(explanation: dict<any>): list<dict<any>>
   var title: list<list<string>> = [[explanation.title, 'Title']]
 
@@ -431,18 +488,23 @@ def ExplanationLines(explanation: dict<any>): list<dict<any>>
     lines->add(Line([['The code changed since the analysis, the warning may be fixed.', 'Changed']]))
   endif
 
-  lines += [Line([]), Line([[explanation.message, '']])]
+  lines += [Line([])] + Paragraphs(explanation.message)
 
   if explanation->get('description', null) != null
-    lines->add(Line([]))
-    lines += explanation.description->split("\n", true)->mapnew((_, l) => Line([[l, '']]))
+    lines += [Line([])] + Paragraphs(explanation.description)
   endif
 
-  if !explanation.related->empty()
-    lines += [Line([]), Line([['Related', 'Heading']])]
-    lines += explanation.related->mapnew((_, r) =>
-      Line([[$'  {FileName(r.uri)}:{r.line}  ', ''], [r.message, '']]))
-  endif
+  var rules = explanation->get('rules', [])
+  var symptoms = rules->copy()->filter((_, r) => IsSymptom(r))
+  var violations = rules->copy()->filter((_, r) => !IsSymptom(r))
+
+  lines += Section('Events', EventLines(explanation->get('events', [])))
+  lines += Section('Related', explanation.related->mapnew((_, r) =>
+    Line([[$'  {FileName(r.uri)}:{r.line}  ', ''], [r.message, '']])))
+  # The relationships come from the hub.
+  var known = rules->indexof((_, r) => type(r.relationship) == v:t_string) >= 0
+  lines += Section(known ? 'May violate' : 'Rules', RuleLines(violations))
+  lines += Section('May be a symptom of an earlier violation of', RuleLines(symptoms))
 
   var links = [['Documentation', 'helpUri'], ['Hub', 'hubUri']]
     ->filter((_, l) => explanation->get(l[1], null) != null)
@@ -532,7 +594,10 @@ export def ShowExplanations(explanations: list<dict<any>>)
   endtry
 
   var winid = popup_atcursor(ExplanationPopupLines(explanations), attrs)
-  win_execute(winid, 'setlocal filetype=codesonarexplain conceallevel=2 concealcursor=n linebreak')
+  win_execute(winid, 'setlocal filetype=codesonarexplain conceallevel=2 concealcursor=n')
+  # Wrapped lines of events, rules and links continue below their text.
+  win_execute(winid, 'setlocal linebreak breakindent breakindentopt=list:-1')
+  win_execute(winid, $'setlocal formatlistpat={LIST_PATTERN->escape(' \\|')}')
 enddef
 
 def ExplainAction(command: dict<any>)
