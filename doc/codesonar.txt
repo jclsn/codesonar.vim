@@ -47,13 +47,26 @@ Configure the hub in your vimrc: >
 	    url: 'http://nas:7340',
 	    username: 'lspuser',
 	    passwordFile: '~/.config/codesonar/password',
-	    project: 'test_project',
 	  },
 	  analyze: {buildCommand: 'make -B'},
 	}
 <
-The server shows the newest finished analysis of the project. To show an
-exported SARIF file instead: >
+If your vimrc registers its language servers with |LspAddServer()|
+itself, build the configuration with codesonar#Server() instead, e.g. in
+~/.vim/lsp/codesonar.vim: >
+
+	let codesonar = codesonar#Server(#{
+	      \ hub: #{url: 'http://nas:7340', username: 'lspuser'},
+	      \ })
+	call LspAddServer([codesonar])
+<
+The settings become |g:codesonar|, and the plugin does not register the
+server itself.
+
+The server shows the newest finished analysis of the hub project of the
+workspace. Without hub.project, it detects the project: from the project
+files of an earlier analysis, like "mixxx.prj_files", else by the name of
+the workspace folder. To show an exported SARIF file instead: >
 
 	g:codesonar = {sarifFile: 'codesonar.sarif'}
 <
