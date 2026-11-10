@@ -76,6 +76,19 @@ def Loaded(lspserver: dict<any>, notification: dict<any>)
   silent doautocmd <nomodeline> User CodeSonarLoaded
 enddef
 
+def Loading(lspserver: dict<any>, notification: dict<any>)
+  server = lspserver
+  var params = notification.params
+
+  if params->has_key('analysis')
+    Message($'Loading analysis {params.analysis}...')
+  elseif params->has_key('file')
+    Message($'Loading {params.file->fnamemodify(":~:.")}...')
+  elseif type(params->get('project', null)) == v:t_string
+    Message($'Loading the newest analysis of {params.project}...')
+  endif
+enddef
+
 def ShowDocument(lspserver: dict<any>, request: dict<any>)
   OpenUrl(request.params.uri)
   lspserver.sendResponse(request, {success: true}, {})
@@ -108,7 +121,7 @@ export def Register()
     initializationOptions: ServerSettings(),
     rootSearch: ['codesonar.conf', '.codesonar', '.git'],
     features: {completion: false},
-    customNotificationHandlers: {'codesonar/loaded': Loaded},
+    customNotificationHandlers: {'codesonar/loading': Loading, 'codesonar/loaded': Loaded},
     customRequestHandlers: {'window/showDocument': ShowDocument},
   }])
 
@@ -364,7 +377,6 @@ def ChooseAnalysis(analyses: list<dict<any>>, choice: number)
     return
   endif
 
-  Message($'Loading analysis {analysis.id}...')
   Execute('codesonar.load', {analysis: analysis.id}, Ignore)
 enddef
 
