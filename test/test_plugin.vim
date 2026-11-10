@@ -27,6 +27,7 @@ g:codesonar = {
   analyze: {command: $'{helpers.DIR}/fake_codesonar.sh', buildCommand: 'make'},
 }
 
+syntax on
 runtime plugin/codesonar.vim
 doautocmd VimEnter
 
@@ -121,8 +122,85 @@ def g:Test_5_opens_warnings_on_the_hub()
   assert_equal(['http://nas.fritz.box:7340/warninginstance/301.html'], readfile($FAKE_BROWSER_LOG))
 enddef
 
-def g:Test_6_runs_an_analysis_in_a_split()
+def ExplanationPopup(): number
+  helpers.WaitFor(() => popup_list()->len() == 1
+    && getwinvar(popup_list()[0], '&filetype') ==# 'codesonarexplain')
+  return popup_list()->get(0, 0)
+enddef
+
+def SyntaxAt(id: number, lnum: number, pattern: string): string
+  var col = PopupLines(id)[lnum - 1]->match(pattern) + 1
+  return win_execute(id, $'echon synIDattr(synID({lnum}, {col}, true), "name")')
+enddef
+
+def g:Test_6_explains_warnings()
   Open('main.c')
+  cursor(16, 1)
+  var other = popup_create('other', {})
+
+  LspCodeAction Show details
+
+  var id = ExplanationPopup()
+  assert_equal([], popup_list()->filter((_, p) => p == other), 'other popups are closed')
+
+  var lines = PopupLines(id)
+  # The hub names the warning class by its id, so it is shown once.
+  assert_equal('Return Pointer to Local', lines[0])
+
+  var title = prop_list(1, {bufnr: winbufnr(id)})
+  assert_equal(['CodeSonarExplainTitle'], title->mapnew((_, p) => p.type))
+
+  assert_match('^&local is returned by get_local_address()', lines[2])
+  assert_equal('CodeSonarExplainFunction', SyntaxAt(id, 3, 'get_local_address'))
+  assert_equal('CodeSonarExplainLocation', SyntaxAt(id, 3, 'main.c:16'))
+  var link = lines->match('^- \[CWE:562\]')
+  assert_equal('CodeSonarExplainLink', SyntaxAt(id, link + 1, 'CWE'))
+  assert_equal('Conceal', SyntaxAt(id, link + 1, 'https'))
+  var hub = lines->match('^Hub ')
+  assert_match('http://nas.fritz.box:7340/warninginstance/301.html$', lines[hub])
+  assert_equal('CodeSonarExplainUrl', SyntaxAt(id, hub + 1, 'http'))
+
+  assert_match('o open in hub  ·  .*q close$', lines[-1])
+
+  # The same at the cursor, without the code action.
+  id->popup_close()
+  codesonar.Explain()
+
+  assert_equal(lines, PopupLines(ExplanationPopup()))
+
+  delete($FAKE_BROWSER_LOG)
+  feedkeys('o', 'xt')
+
+  helpers.WaitFor(() => filereadable($FAKE_BROWSER_LOG))
+  assert_equal(['http://nas.fritz.box:7340/warninginstance/301.html'], readfile($FAKE_BROWSER_LOG))
+  assert_equal([], popup_list())
+enddef
+
+def g:Test_7_highlights_code_numbers_and_links()
+  var id = popup_create(['Call printf() or free(p) with 0x10, 42 and 3.5 items',
+    "See https://example.com/doc?id=7 and `code`, **bold** and 'p'."], {})
+  win_execute(id, 'setlocal filetype=codesonarexplain')
+
+  assert_equal('CodeSonarExplainFunction', SyntaxAt(id, 1, 'printf'))
+  assert_equal('CodeSonarExplainFunction', SyntaxAt(id, 1, '()'))
+  assert_equal('CodeSonarExplainFunction', SyntaxAt(id, 1, 'free'))
+  assert_equal('', SyntaxAt(id, 1, '(p)'))
+  assert_equal('CodeSonarExplainNumber', SyntaxAt(id, 1, '0x10'))
+  assert_equal('CodeSonarExplainNumber', SyntaxAt(id, 1, '42'))
+  assert_equal('CodeSonarExplainNumber', SyntaxAt(id, 1, '3.5'))
+  assert_equal('', SyntaxAt(id, 1, 'items'))
+
+  assert_equal('CodeSonarExplainUrl', SyntaxAt(id, 2, '7 and'))
+  assert_equal('CodeSonarExplainCode', SyntaxAt(id, 2, 'code'))
+  assert_equal('CodeSonarExplainBold', SyntaxAt(id, 2, 'bold'))
+  assert_equal('CodeSonarExplainQuoted', SyntaxAt(id, 2, "'p'"))
+
+  id->popup_close()
+enddef
+
+def g:Test_8_runs_an_analysis_in_a_split()
+  Open('main.c')
+
   codesonar.Analyze('from vim')
 
   helpers.WaitFor(() => filereadable(LOG .. '.cwd'))
@@ -142,8 +220,9 @@ def g:Test_6_runs_an_analysis_in_a_split()
   assert_false(codesonar.IsAnalyzing())
 enddef
 
-def g:Test_7_connects_and_chooses_a_project()
+def g:Test_9_connects_and_chooses_a_project()
   Open('main.c')
+
   codesonar.Connect()
   var id = Popup()
   assert_equal(['1  mixxx', '2  test_project'], PopupLines(id))
