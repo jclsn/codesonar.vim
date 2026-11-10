@@ -70,6 +70,7 @@ def g:Test_1_loads_the_newest_finished_analysis()
   assert_equal('4', Status().hubId)
   assert_equal('test_project fixes', Status().name)
   assert_equal(13, Status().total)
+  assert_match('CodeSonar: Loading the newest analysis of test_project\.\.\.', execute('messages'))
   assert_match('CodeSonar: test_project fixes: 13 of 13 warnings shown', execute('messages'))
 enddef
 
@@ -86,7 +87,10 @@ def g:Test_2_chooses_an_analysis()
   assert_match('^  \+3  test_project initial', lines[2])
 
   id->popup_close(3)
+
   helpers.WaitFor(() => Status()->get('hubId', '') ==# '3' && Status().counts.unverified < 13)
+  assert_match('CodeSonar: Loading analysis 3\.\.\.', execute('messages'))
+
   # The hub keeps the analyzed sources of analysis 3.
   assert_equal(13, Status().counts.unchanged)
   helpers.WaitFor(() => DiagCount() == 8)
