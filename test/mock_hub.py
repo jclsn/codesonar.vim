@@ -23,6 +23,17 @@ def listing(name):
                 {"type": "wdom_s", "comment": True, "children": [text[half:], "\n"]},
             ]})
     return {"type": "wdom_file", "children": children}
+# The categories of warning 305, a double free, as the hub returns them.
+DOUBLE_FREE_RULES = [
+    {"link": "ALLOC.DF", "url": "/install/codesonar/doc/html/ALLOC.DF.html",
+     "relationship": None, "rule_text": None},
+    {"link": "MisraC2025:D.4.1", "url": "/install/codesonar/doc/html/MISRA_C.html",
+     "relationship": "intersects", "rule_text": "Run-time failures shall be minimized"},
+    {"link": "CWE:415", "url": "https://links.codesonar.com/cwe/id/415/",
+     "relationship": "intersects", "rule_text": "Double Free"},
+    {"link": "CERT-CPP:OOP54-CPP", "url": "https://links.codesonar.com/cert-cpp/",
+     "relationship": "follows", "rule_text": "Gracefully handle self-copy assignment"},
+]
 TOKEN = "4/token"
 expired = {"once": False}
 
@@ -87,6 +98,8 @@ class Hub(BaseHTTPRequestHandler):
             sfid = self.path[len("/analysis/3-file"):-len(".json")]
             if sfid in SOURCES:
                 return self.reply(200, json.dumps(listing(SOURCES[sfid])))
+        if self.path == "/warninginstance/305.json":
+            return self.reply(200, json.dumps({"id": 305, "categories": DOUBLE_FREE_RULES}))
         if self.path == "/analysis/9-allwarnings.sarif":
             return self.reply(200, "<html>oops</html>", "text/html")
         self.reply(404, "Analysis not found", "text/plain")

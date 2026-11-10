@@ -152,10 +152,14 @@ def g:Test_6_explains_warnings()
 
   assert_match('^&local is returned by get_local_address()', lines[2])
   assert_equal('CodeSonarExplainFunction', SyntaxAt(id, 3, 'get_local_address'))
-  assert_equal('CodeSonarExplainLocation', SyntaxAt(id, 3, 'main.c:16'))
-  var link = lines->match('^- \[CWE:562\]')
-  assert_equal('CodeSonarExplainLink', SyntaxAt(id, link + 1, 'CWE'))
-  assert_equal('Conceal', SyntaxAt(id, link + 1, 'https'))
+  assert_equal('- local was defined at main.c:16.', lines[4], 'one paragraph per sentence')
+  assert_equal('CodeSonarExplainLocation', SyntaxAt(id, 5, 'main.c:16'))
+
+  # Without titles from the hub, the rules are listed by id.
+  var rules = lines->index('Rules')
+  assert_match('^  MisraC2025:18.6, MisraC2023:18.6, .*CWE:562, ', lines[rules + 1])
+  assert_equal(-1, lines->match('](http'), 'no Markdown links')
+
   var hub = lines->match('^Hub ')
   assert_match('http://nas.fritz.box:7340/warninginstance/301.html$', lines[hub])
   assert_equal('CodeSonarExplainUrl', SyntaxAt(id, hub + 1, 'http'))
@@ -174,6 +178,33 @@ def g:Test_6_explains_warnings()
   helpers.WaitFor(() => filereadable($FAKE_BROWSER_LOG))
   assert_equal(['http://nas.fritz.box:7340/warninginstance/301.html'], readfile($FAKE_BROWSER_LOG))
   assert_equal([], popup_list())
+enddef
+
+def g:Test_6a_explains_events_and_rules()
+  Open('main.c')
+  cursor(37, 1)
+
+  codesonar.Explain()
+
+  var lines = PopupLines(ExplanationPopup())
+  assert_equal('Double Free', lines[0])
+
+  var events = lines->index('Events')
+  assert_equal('  1  main.c:27  Skipping "if".  argc > 1 evaluates to false.', lines[events + 1])
+  assert_equal('     main.c:34  Calling procedure duplicate.', lines[events + 2])
+  assert_equal('  2    utils.c:13  malloc() returns the address of a new object.', lines[events + 3])
+  assert_match('^  8  main.c:37  dup, which evaluates to malloc(strlen(text) + 1) (utils.c:13), is',
+    lines[lines->index('May violate') - 2])
+
+  # The hub knows the titles of the rules and how they relate.
+  var violated = lines->index('May violate')
+  assert_equal(['  MisraC2025:D.4.1  Run-time failures shall be minimized',
+    '  CWE:415           Double Free'], lines[violated + 1 : violated + 2])
+
+  var symptom = lines->index('May be a symptom of an earlier violation of')
+  assert_equal('  CERT-CPP:OOP54-CPP  Gracefully handle self-copy assignment', lines[symptom + 1])
+  assert_match('^Documentation  http://nas.fritz.box:7340/install/codesonar/doc/html/', lines[symptom + 3])
+  popup_clear()
 enddef
 
 def g:Test_7_highlights_code_numbers_and_links()
