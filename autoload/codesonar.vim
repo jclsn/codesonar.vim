@@ -398,14 +398,15 @@ def DefineHighlights()
 enddef
 
 # A popup line, with the text properties of its parts: [[text, prop], ...]
-# where an empty prop means plain text.
-def Line(parts: list<list<string>>): dict<any>
+# where an empty prop means plain text. Property types are named prefix
+# and prop.
+def Line(parts: list<list<string>>, prefix: string = 'CodeSonarExplain'): dict<any>
   var text = ''
   var props = []
 
   for [part, prop] in parts
     if !prop->empty() && !part->empty()
-      props->add({col: text->len() + 1, length: part->len(), type: $'CodeSonarExplain{prop}'})
+      props->add({col: text->len() + 1, length: part->len(), type: prefix .. prop})
     endif
 
     text ..= part
@@ -626,4 +627,131 @@ enddef
 # template if there is none yet.
 export def Conf()
   Execute('codesonar.project', {createConf: true}, OpenConf)
+enddef
+
+# Sends g:codesonar to the server after a change.
+def SendSettings()
+  Server().sendNotification('workspace/didChangeConfiguration', {settings: {codesonar: ServerSettings()}})
+enddef
+
+def SetPresets(names: list<string>)
+  if !exists('g:codesonar')
+    g:codesonar = {}
+  endif
+
+  g:codesonar.analyze = g:codesonar->get('analyze', {})->extend({presets: names})
+  SendSettings()
+  Message(names->empty() ? 'Analyses use no presets' : $'Analyses use the presets {names->join(", ")}')
+enddef
+
+# Highlights the names of presets, ticked ones differently.
+def DefinePresetHighlights()
+  highlight default link CodeSonarPresetName Identifier
+  highlight default link CodeSonarPresetTicked Special
+
+  for name in ['CodeSonarPresetName', 'CodeSonarPresetTicked']
+    if prop_type_get(name)->empty()
+      prop_type_add(name, {highlight: name})
+    endif
+  endfor
+enddef
+
+def NameWidth(presets: list<dict<any>>): number
+  return presets->mapnew((_, p) => strdisplaywidth(p.name))->max()
+enddef
+
+export def PresetLines(presets: list<dict<any>>): list<dict<any>>
+  var width = NameWidth(presets)
+
+  return presets->mapnew((_, p) => Line([
+    [p.selected ? '[x] ' : '[ ] ', ''],
+    [p.name, p.selected ? 'Ticked' : 'Name'],
+    [repeat(' ', width - strdisplaywidth(p.name)), ''],
+    [type(p.description) == v:t_string ? $'  {p.description}' : '', ''],
+  ], 'CodeSonarPreset'))
+enddef
+
+# <Space> ticks a preset, <C-D>, <C-U>, g and G page, <CR> uses the
+# ticked presets.
+def PresetFilter(presets: list<dict<any>>, winid: number, key: string): bool
+  var line = line('.', winid)
+
+  if key ==# ' '
+    presets[line - 1].selected = !presets[line - 1].selected
+    winid->popup_settext(PresetLines(presets))
+  elseif key ==# "\<C-D>" || key ==# "\<C-U>" || key ==# 'g' || key ==# 'G'
+    win_execute(winid, $'normal! {SCROLL[key]}')
+  else
+    return MenuFilter(winid, key)
+  endif
+
+  return true
+enddef
+
+def PresetsChosen(presets: list<dict<any>>, _: number, result: number)
+  if result > 0
+    SetPresets(presets->copy()->filter((_, p) => p.selected)->map((_, p) => p.name))
+  endif
+enddef
+
+def ChoosePresets(presets: list<dict<any>>)
+  if presets->empty()
+    Error('The CodeSonar installation has no presets')
+    return
+  endif
+
+  var attrs: dict<any> = {
+    title: ' CodeSonar presets: <Space> tick, <CR> use ',
+    zindex: 1000,
+    cursorline: true,
+    mapping: false,
+    wrap: true,
+    maxheight: max([5, &lines - 6]),
+    maxwidth: min([100, &columns - 4]),
+    padding: [0, 1, 0, 1],
+    scrollbar: true,
+    filter: function(PresetFilter, [presets]),
+    callback: function(PresetsChosen, [presets]),
+  }
+
+  try
+    attrs = call('lsp#options#PopupConfigure', ['CodeAction', attrs])
+  catch
+    attrs.border = []
+  endtry
+
+  DefinePresetHighlights()
+  var winid = popup_create(PresetLines(presets), attrs)
+  # Long descriptions continue below their start: after "[ ] ", the names
+  # and two spaces.
+  win_execute(winid, $'setlocal linebreak breakindent breakindentopt=shift:{NameWidth(presets) + 6}')
+enddef
+
+# Chooses the presets of analyses: :CodeSonarPresets [preset ...] sets
+# them, without arguments a menu shows those of the installation.
+export def Presets(...names: list<string>)
+  if !names->empty()
+    if !Server()->empty()
+      SetPresets(names)
+    else
+      Error('The server is not running: open a file of the project first')
+    endif
+
+    return
+  endif
+
+  Execute('codesonar.presets', null, ChoosePresets)
+enddef
+
+export def CompletePresets(lead: string, _: string, _: number): list<string>
+  var lspserver = Server()
+
+  if lspserver->empty()
+    return []
+  endif
+
+  var reply = lspserver.rpc('workspace/executeCommand', {command: 'codesonar.presets', arguments: []},
+    {timeout: 2000})
+
+  return reply->get('result', [])->mapnew((_, p) => p.name)->filter((_, n) => n->stridx(lead) == 0)
 enddef

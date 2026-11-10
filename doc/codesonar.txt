@@ -98,6 +98,19 @@ The commands need a running server, so use them in a file of the workspace.
 		Sign in to a hub, asking for the password, and choose one of
 		its projects. Without arguments the configured hub is used.
 
+:CodeSonarPresets [preset ...]                            *:CodeSonarPresets*
+		Choose the CodeSonar presets of |:CodeSonarAnalyze|, e.g.
+		"misrac2025" for the rules of MISRA C:2025. Without arguments,
+		a menu shows the presets of the installation with their
+		descriptions:
+			j k <C-D> <C-U> g G	move
+			<Space>			tick or untick a preset
+			<CR>			use the ticked presets
+			q <Esc>			cancel
+		With arguments, analyses use these presets. The choice lasts
+		until Vim exits; to keep it, set analyze.presets in
+		|g:codesonar|. The shown analysis stays.
+
 :CodeSonarProjects                                        *:CodeSonarProjects*
 		Choose another project of the hub.
 
@@ -147,6 +160,11 @@ CodeSonarExplainLocation	file locations like main.c:16 (Directory)
 CodeSonarExplainSeparator	line between warnings (NonText)
 CodeSonarExplainHint		key hints (Comment)
 
+The preset menu of |:CodeSonarPresets| highlights the names of presets:
+
+CodeSonarPresetName		presets that are not ticked (Identifier)
+CodeSonarPresetTicked		ticked presets (Special)
+
 ==============================================================================
 4. SETTINGS                                                *codesonar-settings*
 
@@ -174,6 +192,8 @@ changed		Warnings in code changed since the analysis: "hide" (the
 		default) or "mark" to show them as hints.
 analyze.buildCommand
 		Build command of |:CodeSonarAnalyze|. Default: "make -B".
+analyze.presets	CodeSonar presets of |:CodeSonarAnalyze|, e.g.
+		['misrac2025', 'cert'].
 analyze.projectFile
 		Project prefix, relative to the workspace: CodeSonar names the
 		project files after it, e.g. "prefix.conf". Default:
