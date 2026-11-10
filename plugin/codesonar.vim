@@ -1,0 +1,29 @@
+vim9script
+# CodeSonar warnings in Vim, from the codesonar-lsp language server.
+
+if exists('g:loaded_codesonar')
+  finish
+endif
+
+g:loaded_codesonar = true
+
+import autoload 'codesonar.vim'
+
+command! -nargs=? -complete=file CodeSonarLoad codesonar.Load(<q-args>)
+command! CodeSonarAnalyses codesonar.Analyses()
+command! -nargs=? CodeSonarAnalyze codesonar.Analyze(<q-args>)
+command! -nargs=* CodeSonarConnect codesonar.Connect(<f-args>)
+command! CodeSonarDiagnostics codesonar.Diagnostics()
+command! CodeSonarProjects codesonar.Projects()
+command! CodeSonarOpenHub codesonar.OpenHub()
+command! CodeSonarRefresh codesonar.Refresh()
+command! CodeSonarStatus codesonar.Status()
+
+if v:vim_did_enter
+  codesonar.Register()
+else
+  augroup CodeSonar
+    autocmd!
+    autocmd VimEnter * codesonar.Register()
+  augroup END
+endif

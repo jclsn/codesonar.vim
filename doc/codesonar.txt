@@ -1,0 +1,138 @@
+*codesonar.txt*  CodeSonar warnings in Vim
+
+==============================================================================
+CONTENTS                                                   *codesonar-contents*
+
+  1. Introduction ............................ |codesonar-introduction|
+  2. Setup ................................... |codesonar-setup|
+  3. Commands ................................ |codesonar-commands|
+  4. Settings ................................ |codesonar-settings|
+
+==============================================================================
+1. INTRODUCTION                                        *codesonar-introduction*
+
+Shows the warnings of CodeSonar analyses in the code, from a CodeSonar hub
+or from an exported SARIF file.
+
+The work is done by the codesonar-lsp language server: it talks to the hub,
+moves warnings along with the code while it is edited and hides warnings
+whose code changed since the analysis, because they are usually fixed. This
+plugin registers the server with yegappan/lsp and adds commands for what
+LSP has no counterpart for: choosing analyses, signing in to the hub and
+running analyses.
+
+The warnings are regular diagnostics, so the commands of yegappan/lsp work
+for them, e.g.: >
+
+	:LspDiag next		go to the next warning
+	:LspDiag current	show the warning at the cursor
+	:LspHover		explain the warning at the cursor
+	:LspCodeAction		apply a fix or open the warning on the hub
+<
+Requirements: Vim 9.1, yegappan/lsp and the codesonar-lsp server in $PATH.
+|:CodeSonarAnalyze| needs the CodeSonar command line tools.
+
+==============================================================================
+2. SETUP                                                      *codesonar-setup*
+
+Install the server from the codesonar-lsp repository: >
+
+	cargo install --path .
+<
+Configure the hub in your vimrc: >
+
+	g:codesonar = {
+	  hub: {
+	    url: 'http://nas:7340',
+	    username: 'lspuser',
+	    passwordFile: '~/.config/codesonar/password',
+	    project: 'test_project',
+	  },
+	  analyze: {buildCommand: 'make -B'},
+	}
+<
+The server shows the newest finished analysis of the project. To show an
+exported SARIF file instead: >
+
+	g:codesonar = {sarifFile: 'codesonar.sarif'}
+<
+The server starts with the first C or C++ file of a workspace. The workspace
+is the closest directory above the file with a "codesonar.conf", a
+".codesonar" or a ".git".
+
+==============================================================================
+3. COMMANDS                                                *codesonar-commands*
+
+The commands need a running server, so use them in a file of the workspace.
+
+:CodeSonarAnalyses                                        *:CodeSonarAnalyses*
+		Open a menu with the analyses of the hub project, newest
+		first. The shown analysis is marked with "*". <CR> shows the
+		chosen analysis.
+
+:CodeSonarAnalyze [name]                                  *:CodeSonarAnalyze*
+		Run "codesonar analyze" for the workspace in a vertical
+		terminal split. When it succeeds, the new analysis is shown.
+		[name] names the analysis on the hub.
+
+:CodeSonarConnect [url [user]]                            *:CodeSonarConnect*
+		Sign in to a hub, asking for the password, and choose one of
+		its projects. Without arguments the configured hub is used.
+
+:CodeSonarProjects                                        *:CodeSonarProjects*
+		Choose another project of the hub.
+
+:CodeSonarLoad [file]                                         *:CodeSonarLoad*
+		Show the SARIF file [file], else the configured analysis.
+
+:CodeSonarDiagnostics                                  *:CodeSonarDiagnostics*
+		Fill the quickfix list with the shown warnings and open it.
+		The list is updated when another analysis is shown.
+
+:CodeSonarOpenHub                                          *:CodeSonarOpenHub*
+		Open the warning at the cursor on the hub, or else the shown
+		analysis.
+
+:CodeSonarRefresh                                          *:CodeSonarRefresh*
+		Load the shown analysis again.
+
+:CodeSonarStatus                                            *:CodeSonarStatus*
+		Show the shown analysis and how many of its warnings are
+		unchanged, moved, changed and unverified.
+
+Example mappings: >
+
+	nnoremap <Leader>ca <Cmd>CodeSonarAnalyses<CR>
+	nnoremap <Leader>cd <Cmd>CodeSonarDiagnostics<CR>
+	nnoremap <Leader>co <Cmd>CodeSonarOpenHub<CR>
+<
+The User event CodeSonarLoaded is triggered when an analysis was shown.
+
+==============================================================================
+4. SETTINGS                                                *codesonar-settings*
+
+g:codesonar holds the settings of the server, see the README of
+codesonar-lsp, and these settings of the plugin:
+
+path		The server command. Default: "codesonar-lsp".
+args		Arguments of the server. Default: [].
+filetypes	File types the server starts for. Default: ["c", "cpp"].
+browser		Command that opens hub links. Default: Vim's |:Open|.
+
+The most common server settings:
+
+hub.url		Hub URL, e.g. "http://nas:7340".
+hub.username	Hub user. Empty for anonymous access.
+hub.passwordFile
+		File with the hub password. Without it, $CODESONAR_PASSWORD
+		is used.
+hub.project	Hub project whose analyses are shown.
+sarifFile	Local SARIF export, used without a hub.
+pathMappings	Paths from the analysis machine to local paths, e.g.
+		[{from: '/builds/app', to: '/home/me/src/app'}].
+changed		Warnings in code changed since the analysis: "hide" (the
+		default) or "mark" to show them as hints.
+analyze.buildCommand
+		Build command of |:CodeSonarAnalyze|. Default: "make -B".
+
+ vim:tw=78:ts=8:noet:ft=help:norl:
