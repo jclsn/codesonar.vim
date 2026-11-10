@@ -11,6 +11,7 @@ import autoload 'codesonar.vim'
 
 command! -nargs=? -complete=file CodeSonarLoad codesonar.Load(<q-args>)
 command! CodeSonarAnalyses codesonar.Analyses()
+command! CodeSonarExplain codesonar.Explain()
 command! -nargs=? CodeSonarAnalyze codesonar.Analyze(<q-args>)
 command! -nargs=* CodeSonarConnect codesonar.Connect(<f-args>)
 command! CodeSonarDiagnostics codesonar.Diagnostics()

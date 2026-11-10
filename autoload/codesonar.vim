@@ -6,6 +6,31 @@ const NAME = 'codesonar'
 # Settings of the plugin, not of the server.
 const PLUGIN_KEYS = ['path', 'args', 'filetypes', 'browser']
 const TYPES = {1: 'E', 2: 'W', 3: 'I', 4: 'N'}
+const EXPLAIN = 'codesonar.explain'
+# Highlight groups of explanations, linked to standard groups.
+const HIGHLIGHTS = {
+  Title: 'Title',
+  Rule: 'Identifier',
+  Heading: 'Statement',
+  Label: 'Statement',
+  Changed: 'WarningMsg',
+  Separator: 'NonText',
+  Hint: 'Comment',
+  Url: 'Underlined',
+  Link: 'Underlined',
+  Function: 'Function',
+  Number: 'Number',
+  Quoted: 'String',
+  Code: 'Special',
+  Location: 'Directory',
+}
+# Keys that scroll the explanation popup, to the normal mode commands.
+const SCROLL = {
+  j: "\<C-E>", k: "\<C-Y>", "\<Down>": "\<C-E>", "\<Up>": "\<C-Y>",
+  "\<C-D>": "\<C-D>", "\<C-U>": "\<C-U>", g: 'gg', G: 'G',
+}
+# The parts of explanations that are text properties, not syntax.
+const PROPS = ['Title', 'Rule', 'Heading', 'Label', 'Changed', 'Separator', 'Hint']
 
 # The server, as yegappan/lsp passes it to notification handlers.
 var server: dict<any> = {}
@@ -85,6 +110,11 @@ export def Register()
     customNotificationHandlers: {'codesonar/loaded': Loaded},
     customRequestHandlers: {'window/showDocument': ShowDocument},
   }])
+
+  # The explain code action is shown here instead of in the server.
+  if exists('*g:LspRegisterCmdHandler')
+    g:LspRegisterCmdHandler(EXPLAIN, ExplainAction)
+  endif
 enddef
 
 # The running server, from any buffer.
@@ -350,4 +380,171 @@ export def Analyze(name: string = '')
   var argument = name->empty() ? null : {name: name}
 
   Execute('codesonar.analyzeCommand', argument, StartAnalysis)
+enddef
+
+def DefineHighlights()
+  for [name, group] in HIGHLIGHTS->items()
+    execute $'highlight default link CodeSonarExplain{name} {group}'
+  endfor
+
+  highlight default CodeSonarExplainBold term=bold cterm=bold gui=bold
+
+  for name in PROPS
+    if prop_type_get($'CodeSonarExplain{name}')->empty()
+      prop_type_add($'CodeSonarExplain{name}', {highlight: $'CodeSonarExplain{name}'})
+    endif
+  endfor
+enddef
+
+# A popup line, with the text properties of its parts: [[text, prop], ...]
+# where an empty prop means plain text.
+def Line(parts: list<list<string>>): dict<any>
+  var text = ''
+  var props = []
+
+  for [part, prop] in parts
+    if !prop->empty() && !part->empty()
+      props->add({col: text->len() + 1, length: part->len(), type: $'CodeSonarExplain{prop}'})
+    endif
+
+    text ..= part
+  endfor
+
+  return {text: text, props: props}
+enddef
+
+def FileName(uri: string): string
+  return UriToPath(uri)->fnamemodify(':t')
+enddef
+
+# The lines of one explanation, see codesonar.explain of the server.
+def ExplanationLines(explanation: dict<any>): list<dict<any>>
+  var title: list<list<string>> = [[explanation.title, 'Title']]
+
+  if explanation->get('ruleId', null) != null && explanation.ruleId !=# explanation.title
+    title += [['  ', ''], [explanation.ruleId, 'Rule']]
+  endif
+
+  var lines = [Line(title)]
+
+  if explanation.status ==# 'changed'
+    lines->add(Line([['The code changed since the analysis, the warning may be fixed.', 'Changed']]))
+  endif
+
+  lines += [Line([]), Line([[explanation.message, '']])]
+
+  if explanation->get('description', null) != null
+    lines->add(Line([]))
+    lines += explanation.description->split("\n", true)->mapnew((_, l) => Line([[l, '']]))
+  endif
+
+  if !explanation.related->empty()
+    lines += [Line([]), Line([['Related', 'Heading']])]
+    lines += explanation.related->mapnew((_, r) =>
+      Line([[$'  {FileName(r.uri)}:{r.line}  ', ''], [r.message, '']]))
+  endif
+
+  var links = [['Documentation', 'helpUri'], ['Hub', 'hubUri']]
+    ->filter((_, l) => explanation->get(l[1], null) != null)
+
+  if !links->empty()
+    lines->add(Line([]))
+    lines += links->mapnew((_, l) => Line([[printf('%-15s', l[0]), 'Label'], [explanation[l[1]], '']]))
+  endif
+
+  return lines
+enddef
+
+def Link(explanations: list<dict<any>>, key: string): string
+  var links = explanations->mapnew((_, e) => e->get(key, null))->filter((_, l) => l != null)
+  return links->empty() ? '' : links[0]
+enddef
+
+# All lines of the explanation popup.
+export def ExplanationPopupLines(explanations: list<dict<any>>): list<dict<any>>
+  var lines: list<dict<any>> = []
+
+  for explanation in explanations
+    if !lines->empty()
+      lines += [Line([]), Line([[repeat('─', 40), 'Separator']]), Line([])]
+    endif
+
+    lines += ExplanationLines(explanation)
+  endfor
+
+  var hints = [['o', 'open in hub', 'hubUri'], ['d', 'documentation', 'helpUri']]
+    ->filter((_, h) => !Link(explanations, h[2])->empty())
+    ->mapnew((_, h) => $'{h[0]} {h[1]}') + ['q close']
+
+  return lines + [Line([]), Line([[hints->join('  ·  '), 'Hint']])]
+enddef
+
+def ExplanationFilter(explanations: list<dict<any>>, winid: number, key: string): bool
+  if key ==# "\<Esc>" || key ==# 'q'
+    winid->popup_close()
+  elseif key ==# 'o' || key ==# 'd'
+    var link = Link(explanations, key ==# 'o' ? 'hubUri' : 'helpUri')
+
+    if link->empty()
+      return false
+    endif
+
+    winid->popup_close()
+    OpenUrl(link)
+  elseif SCROLL->has_key(key)
+    win_execute(winid, $'normal! {SCROLL[key]}')
+  else
+    return false
+  endif
+
+  return true
+enddef
+
+# Shows explanations in a popup at the cursor. Other popups are closed, so
+# that the explanation is not hidden behind them.
+export def ShowExplanations(explanations: list<dict<any>>)
+  if explanations->empty()
+    Error('No warning in this line')
+    return
+  endif
+
+  popup_clear()
+  DefineHighlights()
+
+  var attrs: dict<any> = {
+    pos: 'botleft',
+    line: 'cursor-1',
+    col: 'cursor',
+    moved: 'any',
+    wrap: true,
+    maxwidth: min([80, &columns - 4]),
+    maxheight: max([5, &lines - 6]),
+    padding: [0, 1, 0, 1],
+    scrollbar: true,
+    mapping: false,
+    filter: function(ExplanationFilter, [explanations]),
+  }
+
+  try
+    attrs = call('lsp#options#PopupConfigure', ['Hover', attrs])
+  catch
+    attrs.border = []
+  endtry
+
+  var winid = popup_atcursor(ExplanationPopupLines(explanations), attrs)
+  win_execute(winid, 'setlocal filetype=codesonarexplain conceallevel=2 concealcursor=n linebreak')
+enddef
+
+def ExplainAction(command: dict<any>)
+  Execute(EXPLAIN, command->get('arguments', [null])[0], ShowExplanations)
+enddef
+
+# Explains the warnings in the cursor line, like the code action.
+export def Explain()
+  var argument = {
+    uri: call('lsp#util#LspFileToUri', [expand('%:p')]),
+    range: {start: {line: line('.') - 1, character: 0}, end: {line: line('.'), character: 0}},
+  }
+
+  Execute(EXPLAIN, argument, ShowExplanations)
 enddef

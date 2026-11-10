@@ -27,7 +27,8 @@ for them, e.g.: >
 	:LspDiag next		go to the next warning
 	:LspDiag current	show the warning at the cursor
 	:LspHover		explain the warning at the cursor
-	:LspCodeAction		apply a fix or open the warning on the hub
+	:LspCodeAction		apply a fix, explain the warning or open it
+				on the hub
 <
 Requirements: Vim 9.1, yegappan/lsp and the codesonar-lsp server in $PATH.
 |:CodeSonarAnalyze| needs the CodeSonar command line tools.
@@ -75,6 +76,16 @@ The commands need a running server, so use them in a file of the workspace.
 		terminal split. When it succeeds, the new analysis is shown.
 		[name] names the analysis on the hub.
 
+:CodeSonarExplain                                          *:CodeSonarExplain*
+		Explain the warnings in the cursor line in a popup, like the
+		"Show details" code action. Other popups are closed. In the
+		popup:
+			j k <C-D> <C-U> g G	scroll
+			o			open the warning on the hub
+			d			open the documentation
+			q <Esc>			close
+		Moving the cursor closes it as well.
+
 :CodeSonarConnect [url [user]]                            *:CodeSonarConnect*
 		Sign in to a hub, asking for the password, and choose one of
 		its projects. Without arguments the configured hub is used.
@@ -105,8 +116,29 @@ Example mappings: >
 	nnoremap <Leader>ca <Cmd>CodeSonarAnalyses<CR>
 	nnoremap <Leader>cd <Cmd>CodeSonarDiagnostics<CR>
 	nnoremap <Leader>co <Cmd>CodeSonarOpenHub<CR>
+	nnoremap <Leader>ce <Cmd>CodeSonarExplain<CR>
 <
 The User event CodeSonarLoaded is triggered when an analysis was shown.
+
+                                                       *codesonar-highlight*
+The explanation popup uses these highlight groups, linked by default to the
+group in parentheses:
+
+CodeSonarExplainTitle		warning class (Title)
+CodeSonarExplainRule		warning class id (Identifier)
+CodeSonarExplainHeading		headings (Statement)
+CodeSonarExplainLabel		link labels (Statement)
+CodeSonarExplainChanged		note on changed code (WarningMsg)
+CodeSonarExplainUrl		URLs (Underlined)
+CodeSonarExplainLink		Markdown links, without their URL (Underlined)
+CodeSonarExplainFunction	function calls like printf() (Function)
+CodeSonarExplainNumber		numbers (Number)
+CodeSonarExplainQuoted		quoted names like 'p' (String)
+CodeSonarExplainCode		`code` (Special)
+CodeSonarExplainBold		**bold** (bold)
+CodeSonarExplainLocation	file locations like main.c:16 (Directory)
+CodeSonarExplainSeparator	line between warnings (NonText)
+CodeSonarExplainHint		key hints (Comment)
 
 ==============================================================================
 4. SETTINGS                                                *codesonar-settings*
