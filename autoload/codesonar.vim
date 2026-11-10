@@ -166,8 +166,129 @@ export def Summary(info: dict<any>): string
   return details->empty() ? text : $'{text} ({details->join(", ")})'
 enddef
 
+# Highlight groups of the status popup, linked by default to these groups.
+const STATUS_HIGHLIGHTS = {
+  Title: 'Title',
+  Label: 'Statement',
+  None: 'Comment',
+  Url: 'Underlined',
+  Number: 'Number',
+  Unchanged: 'String',
+  Moved: 'Identifier',
+  Changed: 'WarningMsg',
+  Unverified: 'Comment',
+  Preset: 'Identifier',
+  Hint: 'Comment',
+}
+
+def DefineStatusHighlights()
+  for [name, group] in STATUS_HIGHLIGHTS->items()
+    execute $'highlight default link CodeSonarStatus{name} {group}'
+
+    if prop_type_get($'CodeSonarStatus{name}')->empty()
+      prop_type_add($'CodeSonarStatus{name}', {highlight: $'CodeSonarStatus{name}'})
+    endif
+  endfor
+enddef
+
+def StatusLine(label: string, parts: list<list<string>>): dict<any>
+  return Line([[printf('%-12s', label), 'Label']] + parts, 'CodeSonarStatus')
+enddef
+
+def Value(text: any, none: string): list<string>
+  return type(text) == v:t_string && !text->empty() ? [text, ''] : [none, 'None']
+enddef
+
+# The lines of the status popup, see codesonar.status of the server.
+export def StatusLines(info: dict<any>): list<dict<any>>
+  var lines = [Line([['CodeSonar', 'Title']], 'CodeSonarStatus'), Line([])]
+
+  if info.loaded
+    var id = type(info.hubId) == v:t_string ? [['  #' .. info.hubId, 'None']] : []
+    lines->add(StatusLine('Analysis', [[info.name, '']] + id))
+  else
+    lines->add(StatusLine('Analysis', [['none loaded', 'None']]))
+  endif
+
+  var hub: list<list<string>> = [Value(info->get('hub', null), 'none')]
+
+  if type(info->get('project', null)) == v:t_string
+    hub += [['  project ', ''], [info.project, '']]
+  endif
+
+  lines->add(StatusLine('Hub', hub))
+
+  if info.loaded
+    if type(info.url) == v:t_string
+      lines->add(StatusLine('Page', [[info.url, 'Url']]))
+    endif
+
+    lines += [Line([]), StatusLine('Warnings', [[string(info.shown), 'Number'], [' of ', ''],
+      [string(info.total), 'Number'], [' shown', '']])]
+    var counts: list<list<string>> = []
+
+    for kind in ['unchanged', 'moved', 'changed', 'unverified']
+      if info.counts[kind] > 0
+        counts += [[counts->empty() ? '' : '  ', ''], [$'{info.counts[kind]} {kind}', kind->substitute('^.', '\u&', '')]]
+      endif
+    endfor
+
+    if !counts->empty()
+      lines->add(StatusLine('', counts))
+    endif
+  endif
+
+  var presets: list<list<string>> = []
+
+  for preset in info->get('presets', [])
+    presets += [[presets->empty() ? '' : ', ', ''], [preset, 'Preset']]
+  endfor
+
+  lines += [Line([]), StatusLine('Presets', presets->empty() ? [['none', 'None']] : presets)]
+
+  var hints = (info->get('url', null) != null ? ['o open in hub'] : []) + ['q close']
+  return lines + [Line([]), Line([[hints->join('  ·  '), 'Hint']], 'CodeSonarStatus')]
+enddef
+
+def StatusFilter(info: dict<any>, winid: number, key: string): bool
+  if key ==# "\<Esc>" || key ==# 'q'
+    winid->popup_close()
+  elseif key ==# 'o' && type(info->get('url', null)) == v:t_string
+    winid->popup_close()
+    OpenUrl(info.url)
+  else
+    return false
+  endif
+
+  return true
+enddef
+
+def ShowStatus(info: dict<any>)
+  popup_clear()
+  DefineStatusHighlights()
+
+  var attrs: dict<any> = {
+    moved: 'any',
+    wrap: true,
+    maxwidth: min([100, &columns - 4]),
+    padding: [0, 1, 0, 1],
+    mapping: false,
+    filter: function(StatusFilter, [info]),
+  }
+
+  try
+    attrs = call('lsp#options#PopupConfigure', ['Hover', attrs])
+  catch
+    attrs.border = []
+  endtry
+
+  popup_create(StatusLines(info), attrs)
+enddef
+
+# Shows the status in a popup: the analysis, its warnings and how analyses
+# are run.
 export def Status()
-  Execute('codesonar.status', null, (result) => Message(Summary(result)))
+  Execute('codesonar.status', null, ShowStatus)
 enddef
 
 export def Load(file: string = '')

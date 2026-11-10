@@ -129,8 +129,11 @@ The commands need a running server, so use them in a file of the workspace.
 		Load the shown analysis again.
 
 :CodeSonarStatus                                            *:CodeSonarStatus*
-		Show the shown analysis and how many of its warnings are
-		unchanged, moved, changed and unverified.
+		Show the status in a popup: the shown analysis with its page
+		on the hub, how many of its warnings are unchanged, moved,
+		changed and unverified, and the hub and presets of new
+		analyses. "o" opens the analysis on the hub, "q" closes the
+		popup.
 
 Example mappings: >
 
@@ -159,6 +162,20 @@ CodeSonarExplainBold		**bold** (bold)
 CodeSonarExplainLocation	file locations like main.c:16 (Directory)
 CodeSonarExplainSeparator	line between warnings (NonText)
 CodeSonarExplainHint		key hints (Comment)
+
+The status popup of |:CodeSonarStatus| uses these groups:
+
+CodeSonarStatusTitle		title (Title)
+CodeSonarStatusLabel		labels like "Analysis" (Statement)
+CodeSonarStatusNone		missing values and the analysis id (Comment)
+CodeSonarStatusUrl		the page of the analysis (Underlined)
+CodeSonarStatusNumber		numbers of warnings (Number)
+CodeSonarStatusUnchanged	unchanged warnings (String)
+CodeSonarStatusMoved		moved warnings (Identifier)
+CodeSonarStatusChanged		changed warnings (WarningMsg)
+CodeSonarStatusUnverified	unverified warnings (Comment)
+CodeSonarStatusPreset		presets (Identifier)
+CodeSonarStatusHint		key hints (Comment)
 
 The preset menu of |:CodeSonarPresets| highlights the names of presets:
 
