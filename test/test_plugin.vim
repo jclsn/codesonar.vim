@@ -14,6 +14,14 @@ for name in ['main.c', 'utils.c', 'utils.h']
   writefile(readfile($'{helpers.FIXTURES}/test_project/{name}'), $'{WORKSPACE}/{name}')
 endfor
 
+# A CodeSonar installation: the fake command with a template.conf next to
+# its bin directory.
+const INSTALL = tempname()
+mkdir(INSTALL .. '/bin', 'p')
+filecopy($'{helpers.DIR}/fake_codesonar.sh', INSTALL .. '/bin/codesonar')
+setfperm(INSTALL .. '/bin/codesonar', 'rwx------')
+writefile(['# CodeSonar template'], INSTALL .. '/template.conf')
+
 const HUB = helpers.StartHub($'{helpers.FIXTURES}/test_project.sarif', WORKSPACE)
 
 $FAKE_CODESONAR_LOG = LOG
@@ -24,7 +32,7 @@ g:codesonar = {
   hub: {url: HUB, username: 'lspuser', password: 'secret', project: 'test_project'},
   pathMappings: [{from: '/build/test_project', to: WORKSPACE}],
   stateDir: WORKSPACE .. '/.state',
-  analyze: {command: $'{helpers.DIR}/fake_codesonar.sh', buildCommand: 'make'},
+  analyze: {command: INSTALL .. '/bin/codesonar', buildCommand: 'make'},
 }
 
 syntax on
@@ -249,6 +257,15 @@ def g:Test_8_runs_an_analysis_in_a_split()
 
   helpers.WaitFor(() => Status()->get('hubId', '') ==# '4')
   assert_false(codesonar.IsAnalyzing())
+enddef
+
+def g:Test_8a_opens_the_configuration()
+  Open('main.c')
+  CodeSonarConf
+  helpers.WaitFor(() => expand('%:p') ==# $'{WORKSPACE}/.codesonar/project.conf')
+  assert_equal(2, winnr('$'))
+  assert_equal(['# CodeSonar template'], getline(1, '$'))
+  assert_match('Created .*/project.conf from the CodeSonar template', execute('messages'))
 enddef
 
 def g:Test_9_connects_and_chooses_a_project()
