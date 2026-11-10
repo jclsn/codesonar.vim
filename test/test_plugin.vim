@@ -268,6 +268,36 @@ def g:Test_7a_chooses_presets()
   assert_true(Status() is shown, 'the analysis is not loaded again')
 enddef
 
+def g:Test_7b_shows_the_status()
+  Open('main.c')
+  popup_create('other', {})
+
+  CodeSonarStatus
+
+  helpers.WaitFor(() => popup_list()->len() == 1 && PopupLines(popup_list()[0])[0] ==# 'CodeSonar')
+  var id = popup_list()[0]
+  var lines = PopupLines(id)
+
+  assert_equal('Analysis    test_project initial  #3', lines[2])
+  assert_equal($'Hub         {HUB}  project test_project', lines[3])
+  assert_equal($'Page        {HUB}/analysis/3.html', lines[4])
+  assert_equal('Warnings    13 of 13 shown', lines[6])
+  assert_equal('            13 unchanged', lines[7])
+  assert_equal('Presets     cert, misrac2025', lines[9])
+  assert_equal('o open in hub  ·  q close', lines[-1])
+
+  var Types = (lnum) => prop_list(lnum, {bufnr: winbufnr(id)})->mapnew((_, p) => p.type)
+  assert_equal(['CodeSonarStatusLabel', 'CodeSonarStatusPreset', 'CodeSonarStatusPreset'], Types(10))
+  assert_equal(['CodeSonarStatusLabel', 'CodeSonarStatusUnchanged'], Types(8))
+
+  delete($FAKE_BROWSER_LOG)
+  feedkeys('o', 'xt')
+
+  helpers.WaitFor(() => filereadable($FAKE_BROWSER_LOG))
+  assert_equal([$'{HUB}/analysis/3.html'], readfile($FAKE_BROWSER_LOG))
+  assert_equal([], popup_list())
+enddef
+
 def g:Test_8_runs_an_analysis_in_a_split()
   Open('main.c')
 
