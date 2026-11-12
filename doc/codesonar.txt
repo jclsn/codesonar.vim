@@ -82,7 +82,11 @@ The commands need a running server, so use them in a file of the workspace.
 :CodeSonarAnalyses                                        *:CodeSonarAnalyses*
 		Open a menu with the analyses of the hub project, newest
 		first. The shown analysis is marked with "*". <CR> shows the
-		chosen analysis.
+		chosen analysis. "d" deletes it from the hub after you
+		confirm with "y". If it was shown, the newest finished
+		analysis is shown instead. If the hub user may not delete
+		analyses, a message says so. The keys are shown below the
+		analyses.
 
 :CodeSonarAnalyze [name]                                  *:CodeSonarAnalyze*
 		Run "codesonar analyze" for the workspace in a vertical
@@ -203,6 +207,12 @@ CodeSonarStatusChanged		changed warnings (WarningMsg)
 CodeSonarStatusUnverified	unverified warnings (Comment)
 CodeSonarStatusPreset		presets (Identifier)
 CodeSonarStatusHint		key hints (Comment)
+
+The menus of |:CodeSonarAnalyses| and |:CodeSonarConnect| show their keys
+below the items:
+
+CodeSonarMenuKey		keys like <CR> (Special)
+CodeSonarMenuHint		what the keys do (Comment)
 
 The preset menu of |:CodeSonarPresets| highlights the names of presets:
 

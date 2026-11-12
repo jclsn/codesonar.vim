@@ -420,19 +420,82 @@ export def Refresh()
   Execute('codesonar.refresh', null, Ignore)
 enddef
 
-def MenuFilter(winid: number, key: string): bool
+# Keys of menus, which items skips: the 1-based line or 0.
+const MENU_MOVES = {
+  j: 1, "\<Down>": 1, "\<C-N>": 1, "\<Tab>": 1,
+  k: -1, "\<Up>": -1, "\<C-P>": -1, "\<S-Tab>": -1,
+}
+
+# The filter of menus whose first items lines can be chosen, or all lines
+# if items is 0. Keys has the functions of further keys.
+def MenuFilter(keys: dict<func(number)>, items: number, winid: number, key: string): bool
+  var line = line('.', winid)
+
   if key ==# "\<Esc>" || key ==# "\<C-C>" || key ==# 'q'
     winid->popup_close(-1)
-    return true
+  elseif keys->has_key(key)
+    winid->popup_close(-1)
+    # The handler may open popups, which a filter must not.
+    timer_start(0, (_) => keys[key](line))
+  elseif items == 0
+    return popup_filter_menu(winid, key)
+  elseif MENU_MOVES->has_key(key)
+    var next = (line - 1 + MENU_MOVES[key] + items) % items + 1
+    win_execute(winid, $'normal! {next}G')
+  elseif key ==# "\<CR>" || key ==# ' '
+    winid->popup_close(line)
+  else
+    return popup_filter_menu(winid, key)
   endif
 
-  return popup_filter_menu(winid, key)
+  return true
 enddef
 
-# A popup menu in the style of yegappan/lsp. Callback gets the 1-based
-# choice, or -1 if cancelled.
-export def Menu(lines: list<string>, title: string, Callback: func(number)): number
-  var attrs: dict<any> = {
+def PopupAttrs(attrs: dict<any>): dict<any>
+  try
+    return call('lsp#options#PopupConfigure', ['CodeAction', attrs])
+  catch
+    return attrs->extend({border: []})
+  endtry
+enddef
+
+const MENU_HIGHLIGHTS = {Key: 'Special', Hint: 'Comment'}
+
+def DefineMenuHighlights()
+  for [name, group] in MENU_HIGHLIGHTS->items()
+    execute $'highlight default link CodeSonarMenu{name} {group}'
+
+    if prop_type_get($'CodeSonarMenu{name}')->empty()
+      prop_type_add($'CodeSonarMenu{name}', {highlight: $'CodeSonarMenu{name}'})
+    endif
+  endfor
+enddef
+
+# The line of key hints below menus, e.g. "<CR> show  d delete".
+export def HintLine(hints: list<list<string>>): dict<any>
+  var parts: list<list<string>> = []
+
+  for [key, action] in hints
+    if !parts->empty()
+      parts->add(['   ', ''])
+    endif
+
+    parts += [[key, 'Key'], [' ' .. action, 'Hint']]
+  endfor
+
+  return Line(parts, 'CodeSonarMenu')
+enddef
+
+# A popup menu in the style of yegappan/lsp, with hints of its keys below
+# the items. Callback gets the 1-based choice, or -1 if cancelled. The
+# functions in keys get the 1-based line when their key is pressed, after
+# the menu was closed. Line selects the item shown first.
+export def Menu(items: list<string>, title: string, Callback: func(number),
+    keys: dict<func(number)> = {}, line: number = 1,
+    hints: list<list<string>> = [['<CR>', 'choose'], ['q', 'close']]): number
+  DefineMenuHighlights()
+  var lines = items->mapnew((_, item) => ({text: item})) + [{text: ''}, HintLine(hints)]
+  var id = popup_create(lines, PopupAttrs({
     title: $' {title} ',
     zindex: 1000,
     cursorline: true,
@@ -440,16 +503,22 @@ export def Menu(lines: list<string>, title: string, Callback: func(number)): num
     wrap: false,
     padding: [0, 1, 0, 1],
     callback: (_, result) => Callback(result),
-    filter: MenuFilter,
-  }
+    filter: (winid, key) => MenuFilter(keys, len(items), winid, key),
+  }))
+  win_execute(id, $'normal! {min([line, len(items)])}G')
+  return id
+enddef
 
-  try
-    attrs = call('lsp#options#PopupConfigure', ['CodeAction', attrs])
-  catch
-    attrs.border = []
-  endtry
-
-  return popup_create(lines, attrs)
+# Asks a yes/no question in a popup. Callback gets true for yes.
+export def Confirm(question: string, Callback: func(bool)): number
+  return popup_dialog([question, '', '(y)es  (n)o'], PopupAttrs({
+    title: ' CodeSonar ',
+    zindex: 1100,
+    padding: [0, 1, 0, 1],
+    highlight: 'WarningMsg',
+    filter: 'popup_filter_yesno',
+    callback: (_, result) => Callback(result == 1),
+  }))
 enddef
 
 export def AnalysisLines(analyses: list<dict<any>>): list<string>
@@ -458,16 +527,44 @@ export def AnalysisLines(analyses: list<dict<any>>): list<string>
 enddef
 
 export def Analyses()
-  Execute('codesonar.analyses', null, (result) => {
-    var analyses = result.analyses
+  Execute('codesonar.analyses', null, (result) => ShowAnalyses(result))
+enddef
 
-    if analyses->empty()
-      Error($'No analyses in hub project {result.project}')
+# The menu of the analyses: Enter shows one, d deletes one.
+def ShowAnalyses(result: dict<any>, line: number = 1)
+  var analyses = result.analyses
+
+  if analyses->empty()
+    Error($'No analyses in hub project {result.project}')
+    return
+  endif
+
+  Menu(AnalysisLines(analyses), $'CodeSonar analyses of {result.project}',
+    (choice) => ChooseAnalysis(analyses, choice),
+    {d: (choice) => DeleteAnalysis(result, choice)}, line,
+    [['<CR>', 'show'], ['d', 'delete on hub'], ['q', 'close']])
+enddef
+
+def DeleteAnalysis(result: dict<any>, choice: number)
+  var analysis = result.analyses[choice - 1]
+  var question = $'Delete analysis {analysis.id} "{analysis.name}" of {result.project} '
+    .. 'from the hub? This cannot be undone.'
+
+  Confirm(question, (yes) => {
+    if !yes
+      ShowAnalyses(result, choice)
       return
     endif
 
-    Menu(AnalysisLines(analyses), $'CodeSonar analyses of {result.project}',
-      (choice) => ChooseAnalysis(analyses, choice))
+    Execute('codesonar.deleteAnalysis', {analysis: analysis.id}, (remaining) => {
+      if remaining.deleted
+        Message($'Deleted analysis {analysis.id} "{analysis.name}"')
+      else
+        Error(remaining.message)
+      endif
+
+      ShowAnalyses(remaining, choice)
+    })
   })
 enddef
 
@@ -921,7 +1018,7 @@ def PresetFilter(presets: list<dict<any>>, winid: number, key: string): bool
   elseif key ==# "\<C-D>" || key ==# "\<C-U>" || key ==# 'g' || key ==# 'G'
     win_execute(winid, $'normal! {SCROLL[key]}')
   else
-    return MenuFilter(winid, key)
+    return MenuFilter({}, 0, winid, key)
   endif
 
   return true
