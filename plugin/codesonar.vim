@@ -21,6 +21,7 @@ command! CodeSonarProjects codesonar.Projects()
 command! CodeSonarOpenHub codesonar.OpenHub()
 command! CodeSonarRefresh codesonar.Refresh()
 command! CodeSonarStatus codesonar.Status()
+command! CodeSonarToggle codesonar.Toggle()
 
 def Init()
   codesonar.Register()

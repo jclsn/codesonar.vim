@@ -7,7 +7,7 @@ hub, moves warnings along with the code while it is edited and hides
 warnings whose code changed since the analysis. This plugin registers the
 server with [yegappan/lsp] and adds what LSP has no counterpart for:
 
-- choose, show and delete the analyses of the hub project
+- choose, show, hide and delete the analyses of the hub project
 - explain warnings in a popup, with the events that lead to them and the
   rules they may violate
 - run `codesonar analyze` for the workspace, incrementally, with presets

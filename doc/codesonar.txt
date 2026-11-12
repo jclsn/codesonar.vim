@@ -154,6 +154,11 @@ The commands need a running server, so use them in a file of the workspace.
 		analyses. "o" opens the analysis on the hub, "q" closes the
 		popup.
 
+:CodeSonarToggle                                            *:CodeSonarToggle*
+		Turn the shown analysis off: its warnings disappear until you
+		turn it on again with |:CodeSonarToggle|, or show another one,
+		e.g. with |:CodeSonarAnalyses| or |:CodeSonarLoad|.
+
 Example mappings: >
 
 	nnoremap <Leader>ca <Cmd>CodeSonarAnalyses<CR>

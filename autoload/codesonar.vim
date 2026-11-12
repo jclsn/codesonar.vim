@@ -272,6 +272,10 @@ export def Execute(command: string, argument: any, Done: func(any))
 enddef
 
 export def Summary(info: dict<any>): string
+  if info->get('hidden', false)
+    return 'Hiding the analysis...'
+  endif
+
   if !info->get('loaded', false)
     return 'No analysis loaded'
   endif
@@ -418,6 +422,11 @@ enddef
 
 export def Refresh()
   Execute('codesonar.refresh', null, Ignore)
+enddef
+
+# Turns the shown analysis off, or the hidden one on again.
+export def Toggle()
+  Execute('codesonar.toggle', null, Ignore)
 enddef
 
 # Keys of menus, which items skips: the 1-based line or 0.
