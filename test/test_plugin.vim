@@ -29,14 +29,21 @@ const HUB = helpers.StartHub($'{helpers.FIXTURES}/test_project.sarif', WORKSPACE
 
 $FAKE_CODESONAR_LOG = LOG
 $FAKE_BROWSER_LOG = LOG .. '.browser'
+# The server entry of a vimrc, which registers it with its other servers.
 g:codesonar = {
+  name: 'codesonar',
   path: $CODESONAR_LSP,
   browser: $'{helpers.DIR}/fake_browser.sh',
-  hub: {url: HUB, username: 'lspuser', password: 'secret', project: 'test_project'},
-  pathMappings: [{from: '/build/test_project', to: WORKSPACE}],
-  stateDir: WORKSPACE .. '/.state',
-  analyze: {command: INSTALL .. '/bin/codesonar', buildCommand: 'make'},
+  initializationOptions: {
+    hub: {url: HUB, username: 'lspuser', password: 'secret', project: 'test_project'},
+    pathMappings: [{from: '/build/test_project', to: WORKSPACE}],
+    stateDir: WORKSPACE .. '/.state',
+    analyze: {command: INSTALL .. '/bin/codesonar', buildCommand: 'make'},
+  },
 }
+augroup TestSetup
+  autocmd User LspSetup g:LspAddServer([g:codesonar])
+augroup END
 
 syntax on
 runtime plugin/codesonar.vim
@@ -411,11 +418,11 @@ def g:Test_7a_chooses_presets()
   assert_equal('[x] misrac2025  MISRA C:2025 rules', PopupLines(id)[1])
   assert_equal(['CodeSonarPresetTicked'], prop_list(2, {bufnr: winbufnr(id)})->mapnew((_, p) => p.type))
   feedkeys("\<CR>", 'xt')
-  assert_equal(['misrac2025'], g:codesonar.analyze.presets)
+  assert_equal(['misrac2025'], g:codesonar.initializationOptions.analyze.presets)
   assert_match('Analyses use the presets misrac2025', execute('messages'))
 
   CodeSonarPresets cert misrac2025
-  assert_equal(['cert', 'misrac2025'], g:codesonar.analyze.presets)
+  assert_equal(['cert', 'misrac2025'], g:codesonar.initializationOptions.analyze.presets)
   sleep 200m
   assert_true(Status() is shown, 'the analysis is not loaded again')
 enddef
