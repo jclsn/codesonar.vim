@@ -20,7 +20,16 @@ const INSTALL = tempname()
 mkdir(INSTALL .. '/bin', 'p')
 filecopy($'{helpers.DIR}/fake_codesonar.sh', INSTALL .. '/bin/codesonar')
 setfperm(INSTALL .. '/bin/codesonar', 'rwx------')
-writefile(['# CodeSonar template'], INSTALL .. '/template.conf')
+# Its template lists the checks, as CodeSonar's does.
+writefile([
+  '# CodeSonar template',
+  '#  The following checks are enabled by default. To discard warnings',
+  '# (C and C++ warning classes) ',
+  '#    WARNING_FILTER += discard class="Buffer Overrun" ',
+  '#  The following checks are disabled by default. To enable checks',
+  '# (C and C++ warning classes) ',
+  '#    WARNING_FILTER += allow class="Function Too Long" ',
+], INSTALL .. '/template.conf')
 mkdir(INSTALL .. '/presets')
 writefile(['# CERT rules'], INSTALL .. '/presets/cert.conf')
 writefile(['# MISRA C:2025 rules'], INSTALL .. '/presets/misrac2025.conf')
@@ -399,15 +408,22 @@ def g:Test_7_highlights_code_numbers_and_links()
   id->popup_close()
 enddef
 
-def g:Test_7a_chooses_presets()
+def Conf(): list<string>
+  return readfile($'{WORKSPACE}/codesonar.conf')
+enddef
+
+def g:Test_7a_chooses_presets_and_checks()
   Open('main.c')
   assert_equal(['misrac2025'], getcompletion('CodeSonarPresets m', 'cmdline'))
 
   var shown = Status()
 
   CodeSonarPresets
+
   var id = Popup()
+  assert_match('^ CodeSonar presets: ', popup_getoptions(id).title)
   assert_equal(['[ ] cert        CERT rules', '[ ] misrac2025  MISRA C:2025 rules'], PopupLines(id))
+
   # Only the names are highlighted, ticked ones differently.
   var props = prop_list(1, {bufnr: winbufnr(id)})
   assert_equal([{col: 5, length: 4, type: 'CodeSonarPresetName'}],
@@ -417,12 +433,46 @@ def g:Test_7a_chooses_presets()
 
   assert_equal('[x] misrac2025  MISRA C:2025 rules', PopupLines(id)[1])
   assert_equal(['CodeSonarPresetTicked'], prop_list(2, {bufnr: winbufnr(id)})->mapnew((_, p) => p.type))
+
+  # "/" filters while typing, <CR> ends the filter.
+  feedkeys('/cert', 'xt')
+
+  assert_match('/cert_', popup_getoptions(id).title)
+
   feedkeys("\<CR>", 'xt')
-  assert_equal(['misrac2025'], g:codesonar.initializationOptions.analyze.presets)
-  assert_match('Analyses use the presets misrac2025', execute('messages'))
+
+  assert_equal(['[ ] cert  CERT rules'], PopupLines(id))
+
+  feedkeys("\<Esc>", 'xt')
+
+  assert_equal(2, PopupLines(id)->len(), 'the filter is cleared')
+
+  # <CR> saves the presets in the workspace configuration.
+  feedkeys("\<CR>", 'xt')
+
+  helpers.WaitFor(() => filereadable($'{WORKSPACE}/codesonar.conf')
+    && Conf()->index('# codesonar-lsp: presets = misrac2025') >= 0)
+  helpers.WaitFor(() => execute('messages') =~# 'Analyses use the presets misrac2025 (.*codesonar.conf)')
+
+  CodeSonarChecks
+
+  id = Popup()
+  assert_match('^ CodeSonar checks (C and C++): ', popup_getoptions(id).title)
+  assert_equal(['[x] Buffer Overrun', '[ ] Function Too Long'], PopupLines(id))
+
+  feedkeys("/long\<CR> ", 'xt')
+
+  assert_equal(['[x] Function Too Long  (changed)'], PopupLines(id))
+
+  feedkeys("\<CR>", 'xt')
+
+  helpers.WaitFor(() => Conf()->index('WARNING_FILTER += allow class="Function Too Long"') >= 0)
+  assert_true(Conf()->match('Buffer Overrun') < 0, 'unchanged checks need no rule')
+  helpers.WaitFor(() => execute('messages') =~# 'Saved the checks in .*codesonar.conf')
 
   CodeSonarPresets cert misrac2025
-  assert_equal(['cert', 'misrac2025'], g:codesonar.initializationOptions.analyze.presets)
+
+  helpers.WaitFor(() => Conf()->index('# codesonar-lsp: presets = cert misrac2025') >= 0)
   sleep 200m
   assert_true(Status() is shown, 'the analysis is not loaded again')
 enddef
@@ -443,6 +493,7 @@ def g:Test_7b_shows_the_status()
   assert_equal('Warnings    13 of 13 shown', lines[6])
   assert_equal('            13 unchanged', lines[7])
   assert_equal('Presets     cert, misrac2025', lines[9])
+  assert_equal($'Config      {WORKSPACE}/codesonar.conf'->substitute('^' .. $HOME, '~', ''), lines[10])
   assert_equal('o open in hub  ·  q close', lines[-1])
 
   var Types = (lnum) => prop_list(lnum, {bufnr: winbufnr(id)})->mapnew((_, p) => p.type)
@@ -484,19 +535,72 @@ enddef
 
 def g:Test_8a_opens_the_configuration()
   Open('main.c')
+
   CodeSonarConf
-  helpers.WaitFor(() => expand('%:p') ==# $'{WORKSPACE}/.codesonar/project.conf')
+
+  helpers.WaitFor(() => expand('%:p') ==# $'{WORKSPACE}/codesonar.conf')
   assert_equal(2, winnr('$'))
-  assert_equal(['# CodeSonar template'], getline(1, '$'))
-  assert_match('Created .*/project.conf from the CodeSonar template', execute('messages'))
+  close
+
+  # Without one, a form asks for the basic settings first, suggesting
+  # the folder name and an incremental build.
+  delete($'{WORKSPACE}/codesonar.conf')
+  CodeSonarConf
+
+  var id = Popup()
+  var folder = WORKSPACE->fnamemodify(':t')
+  assert_equal(['No codesonar.conf found.',
+    'A basic configuration must be defined for the :CodeSonarAnalyze command.',
+    'The first analysis needs a full rebuild, later ones only what changed:', '',
+    'Hub address                _', 'Incremental build          Yes',
+    $'Project name               {folder}', 'Full build command         make -B',
+    'Incremental build command  make', '', '<Tab> next field  <CR> save  <Esc> cancel'],
+    PopupLines(id))
+
+  # Yes or No with <Space> or their first letter.
+  feedkeys("\<Tab> ", 'xt')
+
+  # Empty fields show what they take.
+  assert_equal('Hub address                host:port', PopupLines(id)[4])
+  assert_equal(['CodeSonarFormLabel', 'CodeSonarFormPlaceholder'],
+    prop_list(5, {bufnr: winbufnr(id)})->mapnew((_, p) => p.type))
+  assert_equal('Incremental build          No  <Space> Yes/No', PopupLines(id)[5])
+
+  feedkeys('y', 'xt')
+
+  assert_equal('Incremental build          Yes  <Space> Yes/No', PopupLines(id)[5])
+
+  var address = HUB->substitute('^http://', '', '')
+  feedkeys($"\<S-Tab>{address}\<Tab>\<Tab>\<C-U>test_project\<Tab>\<Tab> -j2", 'xt')
+
+  assert_equal([$'Hub address                {address}', 'Incremental build          Yes',
+    'Project name               test_project', 'Full build command         make -B',
+    'Incremental build command  make -j2_'], PopupLines(id)[4 : 8])
+
+  feedkeys("\<CR>", 'xt')
+
+  helpers.WaitFor(() => expand('%:p') ==# $'{WORKSPACE}/codesonar.conf')
+  assert_equal(['# codesonar-lsp: project = /test_project',
+    '# codesonar-lsp: build = make -B                 # full rebuild, for the first analysis',
+    '# codesonar-lsp: incremental-build = make -j2    # what changed, for later analyses',
+    '# END codesonar-lsp', '', $'HUB_ADDRESS = {address}', 'INCREMENTAL_BUILD = Yes'],
+    getline(2, '$'))
 enddef
 
 def g:Test_8b_uses_the_configuration_of_the_workspace()
   writefile(['INCREMENTAL_BUILD = Yes'], $'{WORKSPACE}/codesonar.conf')
   Open('main.c')
+
   CodeSonarConf
+
+  assert_equal('No configuration block for codesonar-lsp in codesonar.conf.',
+    PopupLines(Popup())[0])
+
+  feedkeys("\<CR>", 'xt')
+
   helpers.WaitFor(() => expand('%:p') ==# $'{WORKSPACE}/codesonar.conf')
-  assert_equal(['INCREMENTAL_BUILD = Yes'], getline(1, '$'))
+  # The section is added, the settings stay.
+  assert_equal('INCREMENTAL_BUILD = Yes', getline('$'))
   close
 
   delete(LOG .. '.cwd')
