@@ -253,7 +253,8 @@ def Running(): dict<any>
 enddef
 
 # Runs a server command and calls Done with its result.
-export def Execute(command: string, argument: any, Done: func(any))
+export def Execute(command: string, argument: any, Done: func(any),
+    Failed: func() = null_function)
   var lspserver = Running()
 
   if lspserver->empty()
@@ -267,6 +268,8 @@ export def Execute(command: string, argument: any, Done: func(any))
     # yegappan/lsp reports errors itself.
     if error->empty()
       Done(result)
+    elseif Failed != null_function
+      Failed()
     endif
   })
 enddef
@@ -436,12 +439,16 @@ const MENU_MOVES = {
 }
 
 # The filter of menus whose first items lines can be chosen, or all lines
-# if items is 0. Keys has the functions of further keys.
-def MenuFilter(keys: dict<func(number)>, items: number, winid: number, key: string): bool
+# if items is 0. Keys has the functions of further keys, which close the
+# menu, actions those of keys that keep it open.
+def MenuFilter(keys: dict<func(number)>, actions: dict<func(number, number)>,
+    items: number, winid: number, key: string): bool
   var line = line('.', winid)
 
   if key ==# "\<Esc>" || key ==# "\<C-C>" || key ==# 'q'
     winid->popup_close(-1)
+  elseif actions->has_key(key)
+    actions[key](winid, line)
   elseif keys->has_key(key)
     winid->popup_close(-1)
     # The handler may open popups, which a filter must not.
@@ -495,16 +502,35 @@ export def HintLine(hints: list<list<string>>): dict<any>
   return Line(parts, 'CodeSonarMenu')
 enddef
 
+const MENU_HINTS = [['<CR>', 'choose'], ['q', 'close']]
+
+# The lines of a menu: its items and the hints of its keys.
+def MenuLines(items: list<string>, hints: list<list<string>>): list<dict<any>>
+  return items->mapnew((_, item) => ({text: item})) + [{text: ''}, HintLine(hints)]
+enddef
+
+# Shows other items in the menu winid, if it is still open.
+export def SetMenuItems(winid: number, items: list<string>, hints: list<list<string>>)
+  if !popup_getpos(winid)->empty()
+    winid->popup_settext(MenuLines(items, hints))
+  endif
+enddef
+
 # A popup menu in the style of yegappan/lsp, with hints of its keys below
-# the items. Callback gets the 1-based choice, or -1 if cancelled. The
-# functions in keys get the 1-based line when their key is pressed, after
-# the menu was closed. Line selects the item shown first.
+# the items. Callback gets the 1-based choice, or -1 if cancelled. Options:
+#   keys	functions of further keys, which get the 1-based line after
+#		the menu was closed
+#   actions	functions of keys that keep the menu open, which get the
+#		menu and the 1-based line
+#   line	the item shown first
+#   hints	the keys and what they do
 export def Menu(items: list<string>, title: string, Callback: func(number),
-    keys: dict<func(number)> = {}, line: number = 1,
-    hints: list<list<string>> = [['<CR>', 'choose'], ['q', 'close']]): number
+    options: dict<any> = {}): number
   DefineMenuHighlights()
-  var lines = items->mapnew((_, item) => ({text: item})) + [{text: ''}, HintLine(hints)]
-  var id = popup_create(lines, PopupAttrs({
+  var keys: dict<func(number)> = options->get('keys', {})
+  var actions: dict<func(number, number)> = options->get('actions', {})
+  var hints: list<list<string>> = options->get('hints', MENU_HINTS)
+  var id = popup_create(MenuLines(items, hints), PopupAttrs({
     title: $' {title} ',
     zindex: 1000,
     cursorline: true,
@@ -512,9 +538,9 @@ export def Menu(items: list<string>, title: string, Callback: func(number),
     wrap: false,
     padding: [0, 1, 0, 1],
     callback: (_, result) => Callback(result),
-    filter: (winid, key) => MenuFilter(keys, len(items), winid, key),
+    filter: (winid, key) => MenuFilter(keys, actions, len(items), winid, key),
   }))
-  win_execute(id, $'normal! {min([line, len(items)])}G')
+  win_execute(id, $'normal! {min([options->get('line', 1), len(items)])}G')
   return id
 enddef
 
@@ -530,16 +556,23 @@ export def Confirm(question: string, Callback: func(bool)): number
   }))
 enddef
 
+# The lines of the analysis menu. The shown analysis is marked with "*",
+# one that is loading with "~".
 export def AnalysisLines(analyses: list<dict<any>>): list<string>
-  return analyses->mapnew((_, a) => printf('%s %4d  %s  %s%s', a.current ? '*' : ' ', a.id,
+  return analyses->mapnew((_, a) => printf('%s %4d  %s  %s%s',
+    a.current ? '*' : a->get('loading', false) ? '~' : ' ', a.id,
     a.name, a.started, a.finished ? '' : $'  [{a.state}]'))
 enddef
+
+const ANALYSIS_HINTS = [['<CR>', 'show'], ['<Space>', 'show/hide'], ['d', 'delete on hub'],
+  ['q', 'close']]
 
 export def Analyses()
   Execute('codesonar.analyses', null, (result) => ShowAnalyses(result))
 enddef
 
-# The menu of the analyses: Enter shows one, d deletes one.
+# The menu of the analyses: Enter shows one, Space shows or hides one and
+# keeps the menu open, d deletes one.
 def ShowAnalyses(result: dict<any>, line: number = 1)
   var analyses = result.analyses
 
@@ -549,9 +582,47 @@ def ShowAnalyses(result: dict<any>, line: number = 1)
   endif
 
   Menu(AnalysisLines(analyses), $'CodeSonar analyses of {result.project}',
-    (choice) => ChooseAnalysis(analyses, choice),
-    {d: (choice) => DeleteAnalysis(result, choice)}, line,
-    [['<CR>', 'show'], ['d', 'delete on hub'], ['q', 'close']])
+    (choice) => ChooseAnalysis(analyses, choice), {
+      keys: {d: (choice) => DeleteAnalysis(result, choice)},
+      actions: {' ': (winid, choice) => ToggleAnalysis(analyses, winid, choice)},
+      line: line,
+      hints: ANALYSIS_HINTS,
+    })
+enddef
+
+# Shows the analysis, or hides it if it is shown, and marks it in the menu.
+def ToggleAnalysis(analyses: list<dict<any>>, winid: number, choice: number)
+  var analysis = analyses[choice - 1]
+  var Update = () => SetMenuItems(winid, AnalysisLines(analyses), ANALYSIS_HINTS)
+
+  if !analysis.finished
+    Error($'Analysis {analysis.id} is not finished yet')
+    return
+  endif
+
+  var Shown = (info: dict<any>) => {
+    var shown = info->get('hubId', null)
+
+    for a in analyses
+      a.current = type(shown) == v:t_string && shown ==# string(a.id)
+      a.loading = false
+    endfor
+
+    Update()
+  }
+  var Failed = () => {
+    analysis.loading = false
+    Update()
+  }
+
+  if analysis.current
+    Execute('codesonar.hide', null, Shown, Failed)
+    return
+  endif
+
+  analysis.loading = true
+  Update()
+  Execute('codesonar.load', {analysis: analysis.id}, Shown, Failed)
 enddef
 
 def DeleteAnalysis(result: dict<any>, choice: number)
@@ -1032,7 +1103,7 @@ def PresetFilter(presets: list<dict<any>>, winid: number, key: string): bool
   elseif key ==# "\<C-D>" || key ==# "\<C-U>" || key ==# 'g' || key ==# 'G'
     win_execute(winid, $'normal! {SCROLL[key]}')
   else
-    return MenuFilter({}, 0, winid, key)
+    return MenuFilter({}, {}, 0, winid, key)
   endif
 
   return true

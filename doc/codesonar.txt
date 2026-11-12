@@ -82,11 +82,14 @@ The commands need a running server, so use them in a file of the workspace.
 :CodeSonarAnalyses                                        *:CodeSonarAnalyses*
 		Open a menu with the analyses of the hub project, newest
 		first. The shown analysis is marked with "*". <CR> shows the
-		chosen analysis. "d" deletes it from the hub after you
-		confirm with "y". If it was shown, the newest finished
-		analysis is shown instead. If the hub user may not delete
-		analyses, a message says so. The keys are shown below the
-		analyses.
+		chosen analysis and closes the menu. <Space> shows it and
+		keeps the menu open, so you can try another one; on the shown
+		analysis, it hides it like |:CodeSonarToggle|. An analysis
+		that is loading is marked with "~". "d" deletes the analysis
+		from the hub after you confirm with "y". If it was shown, the
+		newest finished analysis is shown instead. If the hub user may
+		not delete analyses, a message says so. The keys are shown
+		below the analyses.
 
 :CodeSonarAnalyze [name]                                  *:CodeSonarAnalyze*
 		Run "codesonar analyze" for the workspace in a vertical
