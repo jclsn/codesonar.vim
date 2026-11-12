@@ -86,7 +86,7 @@ def g:Test_2_chooses_an_analysis()
   assert_match('^\*  \+4  test_project fixes', lines[1])
   assert_match('^  \+3  test_project initial', lines[2])
   # The keys below the analyses, which the cursor skips.
-  assert_equal(['', '<CR> show   d delete on hub   q close'], lines[3 : 4])
+  assert_equal(['', '<CR> show   <Space> show/hide   d delete on hub   q close'], lines[3 : 4])
   assert_equal(['CodeSonarMenuKey', 'CodeSonarMenuHint'],
     prop_list(5, {bufnr: winbufnr(id)})[0 : 1]->mapnew((_, p) => p.type))
 
@@ -160,6 +160,36 @@ def g:Test_2a_deletes_an_analysis_after_confirmation()
 enddef
 
 def Ignore(_: any)
+enddef
+
+def g:Test_2b_shows_and_hides_analyses_in_the_menu()
+  Open('main.c')
+  codesonar.Analyses()
+  var id = Popup()
+
+  assert_match('^\*  \+3  test_project initial', PopupLines(id)[1])
+
+  # Space shows the analysis and keeps the menu open.
+  feedkeys(' ', 'xt')
+
+  assert_match('^\~  \+4  test_project fixes', PopupLines(id)[0])
+  helpers.WaitFor(() => PopupLines(id)[0] =~# '^\*')
+  assert_match('^  \+3  test_project initial', PopupLines(id)[1])
+  assert_equal('4', Status().hubId)
+  assert_equal([id], popup_list())
+
+  # Space on the shown analysis hides it.
+  feedkeys(' ', 'xt')
+
+  helpers.WaitFor(() => PopupLines(id)[0] =~# '^ ')
+  assert_false(Status().loaded)
+  helpers.WaitFor(() => DiagCount() == 0)
+
+  # Enter shows an analysis and closes the menu.
+  feedkeys("j\<CR>", 'xt')
+
+  assert_equal([], popup_list())
+  helpers.WaitFor(() => Status()->get('hubId', '') ==# '3' && Status().counts.unverified < 13)
 enddef
 
 def g:Test_2c_toggles_the_analysis()
