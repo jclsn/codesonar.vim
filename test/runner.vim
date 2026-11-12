@@ -1,6 +1,7 @@
 vim9script
 # Runs the Test_* functions of the file in g:test_file and writes the
-# results to g:test_log. Vim exits with an error if a test failed.
+# results to g:test_log. Vim exits with an error if a test failed. Tests
+# that throw "Skipped: reason" are skipped.
 
 var log: list<string> = []
 var failed = 0
@@ -12,8 +13,11 @@ execute 'source' fnameescape(g:test_file)
 
 for name in getcompletion('Test_', 'function')->map((_, f) => f->substitute('()$', '', ''))
   v:errors = []
+  var skipped = ''
   try
     call(name, [])
+  catch /^Skipped: /
+    skipped = v:exception->substitute('^Skipped: ', '', '')
   catch
     v:errors->add($'{v:exception} at {v:throwpoint}')
   endtry
@@ -21,7 +25,9 @@ for name in getcompletion('Test_', 'function')->map((_, f) => f->substitute('()$
   silent! only!
   silent! :%bwipeout!
 
-  if v:errors->empty()
+  if !skipped->empty()
+    log->add($'skip    {name}: {skipped}')
+  elseif v:errors->empty()
     log->add($'ok      {name}')
   else
     failed += 1

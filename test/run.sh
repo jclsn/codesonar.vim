@@ -2,12 +2,17 @@
 # Runs the tests in a headless Vim: test/run.sh [test/test_name.vim ...]
 #
 # Needs yegappan/lsp in $LSP_PLUGIN (default ~/.vim/plugged/lsp) and
-# codesonar-lsp in $CODESONAR_LSP, by default the one in $PATH.
+# codesonar-lsp in $CODESONAR_LSP, by default the one in $PATH. The status
+# line tests use vim-airline in $AIRLINE_PLUGIN and lightline in
+# $LIGHTLINE_PLUGIN, if they exist.
 
 cd "$(dirname "$0")/.." || exit 1
 mkdir -p test/results
 
 : "${LSP_PLUGIN:=$HOME/.vim/plugged/lsp}"
+: "${AIRLINE_PLUGIN:=$HOME/.vim/plugged/vim-airline}"
+: "${LIGHTLINE_PLUGIN:=$HOME/.vim/plugged/lightline.vim}"
+export AIRLINE_PLUGIN LIGHTLINE_PLUGIN
 : "${CODESONAR_LSP:=$(command -v codesonar-lsp)}"
 [ -x "$CODESONAR_LSP" ] || { echo "codesonar-lsp not found, set CODESONAR_LSP" >&2; exit 1; }
 export CODESONAR_LSP
