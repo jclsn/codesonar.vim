@@ -85,11 +85,17 @@ The commands need a running server, so use them in a file of the workspace.
 		chosen analysis and closes the menu. <Space> shows it and
 		keeps the menu open, so you can try another one; on the shown
 		analysis, it hides it like |:CodeSonarToggle|. An analysis
-		that is loading is marked with "~". "d" deletes the analysis
-		from the hub after you confirm with "y". If it was shown, the
-		newest finished analysis is shown instead. If the hub user may
-		not delete analyses, a message says so. The keys are shown
-		below the analyses.
+		that is loading is marked with "~".
+
+		Finished analyses are kept downloaded once they were shown,
+		see cachedAnalyses in |codesonar-settings|, and marked with
+		"[cached]": they show up quickly. "x" deletes the local copy,
+		so that the analysis is downloaded again the next time.
+
+		"d" deletes the analysis from the hub after you confirm with
+		"y". If it was shown, the newest finished analysis is shown
+		instead. If the hub user may not delete analyses, a message
+		says so. The keys are shown below the analyses.
 
 :CodeSonarAnalyze [name]                                  *:CodeSonarAnalyze*
 		Run "codesonar analyze" for the workspace in a vertical
@@ -268,6 +274,9 @@ hub.passwordFile
 		is used.
 hub.project	Hub project whose analyses are shown.
 sarifFile	Local SARIF export, used without a hub.
+cachedAnalyses	How many shown analyses of each hub project are kept
+		downloaded, in cacheDir ($XDG_CACHE_HOME/codesonar-lsp). 0
+		turns this off. Default: 10.
 pathMappings	Paths from the analysis machine to local paths, e.g.
 		[{from: '/builds/app', to: '/home/me/src/app'}].
 changed		Warnings in code changed since the analysis: "hide" (the

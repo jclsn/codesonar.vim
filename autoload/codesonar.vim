@@ -557,22 +557,32 @@ export def Confirm(question: string, Callback: func(bool)): number
 enddef
 
 # The lines of the analysis menu. The shown analysis is marked with "*",
-# one that is loading with "~".
+# one that is loading with "~". Cached ones show up quickly.
 export def AnalysisLines(analyses: list<dict<any>>): list<string>
-  return analyses->mapnew((_, a) => printf('%s %4d  %s  %s%s',
+  return analyses->mapnew((_, a) => printf('%s %4d  %s  %s%s%s',
     a.current ? '*' : a->get('loading', false) ? '~' : ' ', a.id,
-    a.name, a.started, a.finished ? '' : $'  [{a.state}]'))
+    a.name, a.started, a.finished ? '' : $'  [{a.state}]',
+    a->get('cached', false) ? '  [cached]' : ''))
 enddef
 
-const ANALYSIS_HINTS = [['<CR>', 'show'], ['<Space>', 'show/hide'], ['d', 'delete on hub'],
-  ['q', 'close']]
+const ANALYSIS_HINTS = [['<CR>', 'show'], ['<Space>', 'show/hide'], ['x', 'delete locally'],
+  ['d', 'delete on hub'], ['q', 'close']]
+
+# Takes over which analyses are cached from the analyses of the server.
+def UpdateCached(analyses: list<dict<any>>, result: dict<any>)
+  var cached = result.analyses->filter((_, a) => a.cached)->mapnew((_, a) => a.id)
+
+  for a in analyses
+    a.cached = cached->index(a.id) >= 0
+  endfor
+enddef
 
 export def Analyses()
   Execute('codesonar.analyses', null, (result) => ShowAnalyses(result))
 enddef
 
 # The menu of the analyses: Enter shows one, Space shows or hides one and
-# keeps the menu open, d deletes one.
+# keeps the menu open, x deletes the local copy of one and d deletes one.
 def ShowAnalyses(result: dict<any>, line: number = 1)
   var analyses = result.analyses
 
@@ -584,7 +594,10 @@ def ShowAnalyses(result: dict<any>, line: number = 1)
   Menu(AnalysisLines(analyses), $'CodeSonar analyses of {result.project}',
     (choice) => ChooseAnalysis(analyses, choice), {
       keys: {d: (choice) => DeleteAnalysis(result, choice)},
-      actions: {' ': (winid, choice) => ToggleAnalysis(analyses, winid, choice)},
+      actions: {
+        ' ': (winid, choice) => ToggleAnalysis(analyses, winid, choice),
+        x: (winid, choice) => UncacheAnalysis(analyses, winid, choice),
+      },
       line: line,
       hints: ANALYSIS_HINTS,
     })
@@ -609,6 +622,11 @@ def ToggleAnalysis(analyses: list<dict<any>>, winid: number, choice: number)
     endfor
 
     Update()
+    # A shown analysis is cached afterwards.
+    Execute('codesonar.analyses', null, (result) => {
+      UpdateCached(analyses, result)
+      Update()
+    })
   }
   var Failed = () => {
     analysis.loading = false
@@ -623,6 +641,22 @@ def ToggleAnalysis(analyses: list<dict<any>>, winid: number, choice: number)
   analysis.loading = true
   Update()
   Execute('codesonar.load', {analysis: analysis.id}, Shown, Failed)
+enddef
+
+# Deletes the local copy of an analysis, so that it is downloaded again.
+def UncacheAnalysis(analyses: list<dict<any>>, winid: number, choice: number)
+  var analysis = analyses[choice - 1]
+
+  if !analysis->get('cached', false)
+    Error($'Analysis {analysis.id} has no local copy')
+    return
+  endif
+
+  Execute('codesonar.uncache', {analysis: analysis.id}, (result) => {
+    UpdateCached(analyses, result)
+    SetMenuItems(winid, AnalysisLines(analyses), ANALYSIS_HINTS)
+    Message($'Deleted the local copy of analysis {analysis.id}')
+  })
 enddef
 
 def DeleteAnalysis(result: dict<any>, choice: number)
