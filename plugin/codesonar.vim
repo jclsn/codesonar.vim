@@ -22,11 +22,28 @@ command! CodeSonarOpenHub codesonar.OpenHub()
 command! CodeSonarRefresh codesonar.Refresh()
 command! CodeSonarStatus codesonar.Status()
 
-if v:vim_did_enter
+def Init()
   codesonar.Register()
-else
-  augroup CodeSonar
-    autocmd!
-    autocmd VimEnter * codesonar.Register()
-  augroup END
+
+  if exists('g:loaded_lightline')
+    codesonar.LightlineInit()
+  endif
+enddef
+
+augroup CodeSonar
+  autocmd!
+  autocmd User LspProgressUpdate codesonar.ProgressUpdated()
+  autocmd User AirlineAfterInit codesonar.AirlineInit()
+
+  if v:vim_did_enter
+    Init()
+  else
+    autocmd VimEnter * Init()
+  endif
+augroup END
+
+# vim-airline started before this plugin.
+if v:vim_did_enter && exists('g:airline_section_c')
+  codesonar.AirlineInit()
+  silent! AirlineRefresh
 endif

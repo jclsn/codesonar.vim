@@ -4,7 +4,7 @@ vim9script
 
 const NAME = 'codesonar'
 # Settings of the plugin, not of the server.
-const PLUGIN_KEYS = ['path', 'args', 'filetypes', 'browser']
+const PLUGIN_KEYS = ['path', 'args', 'filetypes', 'browser', 'statusline']
 const TYPES = {1: 'E', 2: 'W', 3: 'I', 4: 'N'}
 const EXPLAIN = 'codesonar.explain'
 # Highlight groups of explanations, linked to standard groups.
@@ -87,6 +87,92 @@ def Loading(lspserver: dict<any>, notification: dict<any>)
   elseif type(params->get('project', null)) == v:t_string
     Message($'Loading the newest analysis of {params.project}...')
   endif
+enddef
+
+const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+var spinner_timer = 0
+var spinner_frame = 0
+
+# What the server is busy with, for the status line, e.g.
+# "CodeSonar ⠹ Downloading 4.2 MB". Empty when it is idle.
+export def Progress(): string
+  for info in g:->get('LspProgress', {})->values()
+    if info.serverName != NAME
+      continue
+    endif
+
+    var parts = [info.title, SPINNER[spinner_frame]]
+
+    if !info.message->empty()
+      parts->add(info.message)
+    endif
+
+    if info.percentage >= 0
+      parts->add($'{info.percentage}%')
+    endif
+
+    return parts->join(' ')
+  endfor
+
+  return ''
+enddef
+
+# Turns the spinner while the server is busy.
+export def ProgressUpdated()
+  var busy = !Progress()->empty()
+
+  if busy && spinner_timer == 0
+    spinner_timer = timer_start(100, (_) => Spin(), {repeat: -1})
+  elseif !busy && spinner_timer != 0
+    timer_stop(spinner_timer)
+    spinner_timer = 0
+  endif
+
+  redrawstatus!
+enddef
+
+def Spin()
+  spinner_frame = (spinner_frame + 1) % len(SPINNER)
+  ProgressUpdated()
+enddef
+
+def ShowsProgress(): bool
+  return Settings()->get('statusline', true) != false
+enddef
+
+# Adds the progress to section c of vim-airline, next to its own progress.
+export def AirlineInit()
+  if !ShowsProgress()
+    return
+  endif
+
+  airline#parts#define_function('codesonar', 'codesonar#Progress')
+  airline#parts#define_accent('codesonar', 'bold')
+  g:airline_section_c ..= airline#section#create([' ', 'codesonar'])
+enddef
+
+# Adds the progress to the right of the active status line of lightline,
+# unless the configuration has it already.
+export def LightlineInit()
+  if !ShowsProgress()
+    return
+  endif
+
+  g:lightline = g:->get('lightline', {})
+  var components = g:lightline->get('component_function', {})
+  if components->has_key('codesonar')
+    return
+  endif
+
+  g:lightline.component_function = components->extend({codesonar: 'codesonar#Progress'})
+  g:lightline.component_function_visible_condition =
+    g:lightline->get('component_function_visible_condition', {})
+    ->extend({codesonar: '!empty(codesonar#Progress())'})
+  var active = g:lightline->get('active', {})
+  var right = active->get('right', [['lineinfo'], ['percent'], ['fileformat', 'fileencoding', 'filetype']])
+  g:lightline.active = active->extend({right: right + [['codesonar']]})
+  lightline#init()
+  lightline#update()
 enddef
 
 def ShowDocument(lspserver: dict<any>, request: dict<any>)

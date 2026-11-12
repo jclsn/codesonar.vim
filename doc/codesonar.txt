@@ -157,6 +157,20 @@ Example mappings: >
 <
 The User event CodeSonarLoaded is triggered when an analysis was shown.
 
+                                                 *codesonar#Progress()*
+codesonar#Progress() returns what the server is busy with, for the status
+line, e.g. "CodeSonar ⠹ Downloading 4.2 MB". It is empty while the server
+is idle. Large analyses take a minute to download, because the hub creates
+them while sending them. The spinner turns while the server is busy.
+
+With vim-airline, the progress is shown in section c, after the file name.
+With lightline, it is the leftmost component on the right, unless
+g:lightline.component_function has a "codesonar" component already. A
+plain 'statusline' needs the function: >
+
+	set laststatus=2
+	set statusline=%f\ %h%m%r%=%{codesonar#Progress()}\ \ %l,%c%V\ %P
+<
                                                        *codesonar-highlight*
 The explanation popup uses these highlight groups, linked by default to the
 group in parentheses:
@@ -206,6 +220,8 @@ path		The server command. Default: "codesonar-lsp".
 args		Arguments of the server. Default: [].
 filetypes	File types the server starts for. Default: ["c", "cpp"].
 browser		Command that opens hub links. Default: Vim's |:Open|.
+statusline	Add the progress to the status line of vim-airline and
+		lightline, see |codesonar#Progress()|. Default: true.
 
 The most common server settings:
 
