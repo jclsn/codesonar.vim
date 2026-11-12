@@ -399,6 +399,23 @@ def g:Test_8a_opens_the_configuration()
   assert_match('Created .*/project.conf from the CodeSonar template', execute('messages'))
 enddef
 
+def g:Test_8b_uses_the_configuration_of_the_workspace()
+  writefile(['INCREMENTAL_BUILD = Yes'], $'{WORKSPACE}/codesonar.conf')
+  Open('main.c')
+  CodeSonarConf
+  helpers.WaitFor(() => expand('%:p') ==# $'{WORKSPACE}/codesonar.conf')
+  assert_equal(['INCREMENTAL_BUILD = Yes'], getline(1, '$'))
+  close
+
+  delete(LOG .. '.cwd')
+  codesonar.Analyze()
+
+  helpers.WaitFor(() => filereadable(LOG .. '.cwd'))
+  var args = readfile(LOG)
+  assert_equal($'{WORKSPACE}/codesonar.conf', args[args->index('-conf-file') + 1])
+  helpers.WaitFor(() => !codesonar.IsAnalyzing())
+enddef
+
 def g:Test_9_connects_and_chooses_a_project()
   Open('main.c')
 
