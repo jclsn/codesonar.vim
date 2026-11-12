@@ -48,7 +48,6 @@ Configure the server like your other language servers of yegappan/lsp, in
 	      \ path: 'codesonar-lsp',
 	      \ initializationOptions: #{
 	      \   hub: #{
-	      \     url: 'http://nas:7340',
 	      \     username: 'lspuser',
 	      \     passwordFile: '~/.config/codesonar/password',
 	      \   },
@@ -56,7 +55,9 @@ Configure the server like your other language servers of yegappan/lsp, in
 	      \ }
 	call LspAddServer([codesonar])
 <
-The plugin adds its handlers to the entry before yegappan/lsp starts the
+The hub, the project and how analyses run come from the codesonar.conf of
+each workspace, see |codesonar-workspace|; hub.url is the hub of
+workspaces without one. The plugin adds its handlers to the entry before yegappan/lsp starts the
 server, so define it in your vimrc, not later. Without g:codesonar, the
 plugin registers a server without settings itself, e.g. for
 |:CodeSonarConnect|.
@@ -113,12 +114,25 @@ The commands need a running server, so use them in a file of the workspace.
 		Moving the cursor closes it as well.
 
 :CodeSonarConf                                                *:CodeSonarConf*
-		Open the configuration file of the workspace in a split, e.g.
-		to add WARNING_FILTER rules: codesonar.conf in its root, see
-		|codesonar-incremental|. Without it, open the configuration
-		file of the CodeSonar project. If there is none yet, it is
-		created from the template.conf of CodeSonar, as the first
-		analysis would.
+		Open the configuration of the workspace in a split, e.g. to
+		add WARNING_FILTER rules: codesonar.conf in its root, see
+		|codesonar-workspace|. Without it, or without the section of
+		codesonar-lsp in it, a form asks for the basic settings
+		first: the hub address (HUB_ADDRESS), whether later analyses
+		are incremental (INCREMENTAL_BUILD), the project name on the
+		hub, the full build command of the first analysis and the
+		incremental build command of later ones. They start as the
+		HUB_ADDRESS and INCREMENTAL_BUILD of the file, if it has them,
+		else "Yes", the name of the workspace folder, "make -B" and
+		"make". Without incremental builds, every analysis is a full
+		build:
+			typing			edit the field; <Space> or the
+						first letter choose Yes or No
+			<BS> <C-U>		delete a character, the field
+			<Tab> <S-Tab> <Down> <Up>
+						next or previous field
+			<CR>			save
+			<Esc>			cancel
 
 :CodeSonarConnect [url [user]]                            *:CodeSonarConnect*
 		Sign in to a hub, asking for the password, and choose one of
@@ -126,16 +140,25 @@ The commands need a running server, so use them in a file of the workspace.
 
 :CodeSonarPresets [preset ...]                            *:CodeSonarPresets*
 		Choose the CodeSonar presets of |:CodeSonarAnalyze|, e.g.
-		"misrac2025" for the rules of MISRA C:2025. Without arguments,
-		a menu shows the presets of the installation with their
-		descriptions:
+		"misrac2025" for the rules of MISRA C:2025. They are kept in
+		the workspace configuration, see |codesonar-workspace|.
+		Without arguments, a popup shows the presets of the CodeSonar
+		installation with their descriptions:
 			j k <C-D> <C-U> g G	move
-			<Space>			tick or untick a preset
-			<CR>			use the ticked presets
+			<Space>			tick or untick
+			/			filter while typing; <CR> ends
+						the filter, <Esc> clears it
+			<CR>			save in the workspace configuration
 			q <Esc>			cancel
-		With arguments, analyses use these presets. The choice lasts
-		until Vim exits; to keep it, set analyze.presets in the
-		settings of |g:codesonar|. The shown analysis stays.
+		The shown analysis stays.
+
+:CodeSonarChecks                                            *:CodeSonarChecks*
+		Choose the checks (warning classes) of |:CodeSonarAnalyze| in
+		a popup like the one of |:CodeSonarPresets|. It lists the
+		checks of the CodeSonar installation, ticked if they are on.
+		Checks that differ from CodeSonar's default are marked
+		"(changed)"; the workspace configuration keeps rules for
+		them.
 
 :CodeSonarProjects                                        *:CodeSonarProjects*
 		Choose another project of the hub.
@@ -189,15 +212,33 @@ plain 'statusline' needs the function: >
 	set laststatus=2
 	set statusline=%f\ %h%m%r%=%{codesonar#Progress()}\ \ %l,%c%V\ %P
 <
-                                                     *codesonar-incremental*
-|:CodeSonarAnalyze| passes codesonar.conf in the root of the workspace to
-CodeSonar with -conf-file, if it exists. CodeSonar reads it after the
-configuration of the project, so it only needs the settings that differ,
-e.g.: >
+                                                       *codesonar-workspace*
+What an analysis is about belongs to the workspace: its codesonar.conf in
+the root of the workspace, which |:CodeSonarAnalyze| passes to CodeSonar
+with -conf-file. CodeSonar reads it after the configuration of the
+project, so it only needs the settings that differ. CodeSonar has no
+settings for the hub project, the presets and the build command, so
+codesonar-lsp keeps them in comments of a section that it writes, e.g. for
+|:CodeSonarConf|, |:CodeSonarPresets|, |:CodeSonarChecks| and
+|:CodeSonarConnect|: >
 
+	# BEGIN codesonar-lsp: written by codesonar-lsp
+	# codesonar-lsp: project = /mixxx
+	# codesonar-lsp: presets = security concurrency
+	# codesonar-lsp: build = cmake --build build
+	# codesonar-lsp: incremental-build = cmake --build build
+	WARNING_FILTER += allow class="Function Too Long"
+	# END codesonar-lsp
+	HUB_ADDRESS = 192.168.184.28:7340
 	INCREMENTAL_BUILD = Yes
 	WARNING_FILTER += discard path:/build/
 <
+HUB_ADDRESS is CodeSonar's own setting, so it stays outside the section.
+The workspace configuration wins over the settings in |g:codesonar|, which
+then only need the credentials. Lines edited by hand in the section are kept, everything
+outside it is left alone.
+
+                                                     *codesonar-incremental*
 Analyses are incremental unless INCREMENTAL_BUILD is "No" in one of the
 files: each one is a child of the previous and only needs what was
 compiled since then. So the first analysis builds with
@@ -244,10 +285,22 @@ below the items:
 CodeSonarMenuKey		keys like <CR> (Special)
 CodeSonarMenuHint		what the keys do (Comment)
 
-The preset menu of |:CodeSonarPresets| highlights the names of presets:
+The popups of |:CodeSonarPresets| and |:CodeSonarChecks| highlight the
+names:
 
-CodeSonarPresetName		presets that are not ticked (Identifier)
-CodeSonarPresetTicked		ticked presets (Special)
+CodeSonarPresetName		names that are not ticked (Identifier)
+CodeSonarPresetTicked		ticked names (Special)
+
+and use these groups:
+
+CodeSonarConfigChanged		"(changed)" of changed checks (WarningMsg)
+CodeSonarConfigNone		no match of the filter (Comment)
+
+The form of |:CodeSonarConf| uses these groups:
+
+CodeSonarFormLabel		names of the fields (Statement)
+CodeSonarFormPlaceholder	what an empty field takes (Comment)
+CodeSonarFormHint		key hints (Comment)
 
 ==============================================================================
 4. SETTINGS                                                *codesonar-settings*
@@ -295,7 +348,7 @@ analyze.incrementalBuildCommand
 		|codesonar-incremental|. Default: "make".
 analyze.confFile
 		Configuration file of the workspace, see
-		|codesonar-incremental|. Default: "codesonar.conf".
+		|codesonar-workspace|. Default: "codesonar.conf".
 analyze.presets	CodeSonar presets of |:CodeSonarAnalyze|, e.g.
 		['misrac2025', 'cert'].
 analyze.projectFile

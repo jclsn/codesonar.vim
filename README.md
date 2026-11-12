@@ -10,8 +10,10 @@ server with [yegappan/lsp] and adds what LSP has no counterpart for:
 - choose, show, hide and delete the analyses of the hub project
 - explain warnings in a popup, with the events that lead to them and the
   rules they may violate
-- run `codesonar analyze` for the workspace, incrementally, with presets
-  and the `codesonar.conf` of the workspace
+- run `codesonar analyze` for the workspace, incrementally, with the hub,
+  project, presets and checks of its `codesonar.conf`; `:CodeSonarConf`
+  starts it, `:CodeSonarPresets` and `:CodeSonarChecks` choose presets and
+  checks in a popup
 - show the loading progress in the status line, also with vim-airline and
   lightline
 
@@ -44,7 +46,6 @@ let codesonar = #{
       \ path: 'codesonar-lsp',
       \ initializationOptions: #{
       \   hub: #{
-      \     url: 'http://nas:7340',
       \     username: 'lspuser',
       \     passwordFile: '~/.config/codesonar/password',
       \   },
@@ -53,7 +54,9 @@ let codesonar = #{
 call LspAddServer([codesonar])
 ```
 
-See `:help codesonar` for the commands and settings.
+The hub, the project and how analyses run come from the `codesonar.conf`
+of each workspace, see `:help codesonar-workspace`, and `:help codesonar`
+for the commands and settings.
 
 ## Tests
 

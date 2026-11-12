@@ -379,6 +379,9 @@ export def StatusLines(info: dict<any>): list<dict<any>>
   endfor
 
   lines += [Line([]), StatusLine('Presets', presets->empty() ? [['none', 'None']] : presets)]
+  var conf = info->get('conf', null)
+  lines->add(StatusLine('Config', type(conf) == v:t_string
+    ? [[conf->fnamemodify(':~'), '']] : [['no codesonar.conf', 'None']]))
 
   var hints = (info->get('url', null) != null ? ['o open in hub'] : []) + ['q close']
   return lines + [Line([]), Line([[hints->join('  ·  '), 'Hint']], 'CodeSonarStatus')]
@@ -1073,38 +1076,161 @@ export def Explain()
   Execute(EXPLAIN, argument, ShowExplanations)
 enddef
 
-def OpenConf(project: dict<any>)
-  if type(project->get('workspaceConf', null)) == v:t_string
-    execute 'split' fnameescape(project.workspaceConf)
-    return
-  endif
+const FORM_HIGHLIGHTS = {Label: 'Statement', Placeholder: 'Comment', Hint: 'Comment'}
 
-  execute 'split' fnameescape(project.conf)
+def DefineFormHighlights()
+  for [name, group] in FORM_HIGHLIGHTS->items()
+    execute $'highlight default link CodeSonarForm{name} {group}'
 
-  if project.created
-    Message($'Created {project.conf} from the CodeSonar template')
-  endif
+    if prop_type_get($'CodeSonarForm{name}')->empty()
+      prop_type_add($'CodeSonarForm{name}', {highlight: $'CodeSonarForm{name}'})
+    endif
+  endfor
 enddef
 
-# Opens the configuration file of the project, created from CodeSonar's
-# template if there is none yet.
+# The lines of a form: its introduction, a field per line, the active one
+# with a cursor, and the keys below.
+export def FormLines(form: dict<any>): list<dict<any>>
+  var width = form.fields->mapnew((_, f) => strdisplaywidth(f.label))->max()
+  var lines = form.fields->mapnew((i, field) => Line([
+    [printf('%-*s  ', width, field.label), 'Label'],
+    [field.value, ''],
+    [i == form.active && !field->has_key('choices') ? '_' : '', ''],
+    [field.value->empty() && i != form.active ? field->get('placeholder', '') : '', 'Placeholder'],
+    [i == form.active && field->has_key('choices')
+      ? $'  <Space> {field.choices->join("/")}' : '', 'Hint'],
+  ], 'CodeSonarForm'))
+  var intro = form.intro->mapnew((_, text) => Line([[text, '']]))
+  return intro + (intro->empty() ? [] : [Line([])]) + lines
+    + [Line([]), Line([['<Tab> next field  <CR> save  <Esc> cancel', 'Hint']], 'CodeSonarForm')]
+enddef
+
+# Typing edits the active field, <BS> deletes, <C-U> clears it, <Tab>,
+# <S-Tab>, <Down> and <Up> move between the fields. Fields with choices
+# take the next one with <Space>, or the one a letter starts.
+def FormFilter(form: dict<any>, winid: number, key: string): bool
+  var field = form.fields[form.active]
+  var count = len(form.fields)
+  var choices: list<string> = field->get('choices', [])
+
+  if !choices->empty() && (key ==# ' ' || key->strchars() == 1 && key =~# '\a')
+    var start = key ==# ' ' ? [] : choices->copy()->filter((_, c) => c[0] ==? key)
+    field.value = start->empty()
+      ? choices[(choices->index(field.value) + 1) % len(choices)] : start[0]
+    winid->popup_settext(FormLines(form))
+    return true
+  elseif !choices->empty() && (key ==# "\<BS>" || key ==# "\<C-U>")
+    return true
+  endif
+
+  if key ==# "\<CR>"
+    winid->popup_close(1)
+    return true
+  elseif key ==# "\<Esc>" || key ==# "\<C-C>"
+    winid->popup_close(-1)
+    return true
+  elseif key ==# "\<Tab>" || key ==# "\<Down>"
+    form.active = (form.active + 1) % count
+  elseif key ==# "\<S-Tab>" || key ==# "\<Up>"
+    form.active = (form.active + count - 1) % count
+  elseif key ==# "\<BS>"
+    field.value = field.value->slice(0, -1)
+  elseif key ==# "\<C-U>"
+    field.value = ''
+  elseif key->strchars() == 1 && key =~# '\p'
+    field.value ..= key
+  else
+    return true
+  endif
+
+  winid->popup_settext(FormLines(form))
+  return true
+enddef
+
+# A popup to edit fields [{label, value, placeholder}] below the lines of
+# intro. Fields with choices: [...] take one of them. Done gets the values, unless the form is cancelled.
+export def Form(title: string, intro: list<string>, fields: list<dict<any>>,
+    Done: func(list<string>)): number
+  popup_clear()
+  DefineFormHighlights()
+  var form = {intro: intro, fields: fields, active: 0}
+  return popup_create(FormLines(form), PopupAttrs({
+    title: $' {title} ',
+    zindex: 1000,
+    mapping: false,
+    padding: [0, 1, 0, 1],
+    minwidth: min([60, &columns - 4]),
+    filter: (winid, key) => FormFilter(form, winid, key),
+    callback: (_, result) => {
+      if result > 0
+        Done(form.fields->mapnew((_, f) => f.value->trim()))
+      endif
+    },
+  }))
+enddef
+
+def OpenWorkspaceConf(project: dict<any>)
+  execute 'split' fnameescape(project.workspaceConf)
+enddef
+
+# Starts the workspace configuration with the basic settings.
+def InitConf(project: dict<any>)
+  var suggested = project.suggested
+  var Text = (value: any): string => type(value) == v:t_string ? value : ''
+
+  var missing = project.workspaceConfExists
+    ? $'No configuration block for codesonar-lsp in {project.workspaceConf->fnamemodify(":t")}.'
+    : $'No {project.workspaceConf->fnamemodify(":t")} found.'
+
+  Form('CodeSonar workspace configuration', [missing,
+    'A basic configuration must be defined for the :CodeSonarAnalyze command.',
+    'The first analysis needs a full rebuild, later ones only what changed:'], [
+    {label: 'Hub address', value: Text(suggested.hubAddress), placeholder: 'host:port'},
+    {label: 'Incremental build', value: suggested->get('incremental', true) ? 'Yes' : 'No',
+      choices: ['Yes', 'No']},
+    {label: 'Project name', value: Text(suggested.project), placeholder: 'name'},
+    {label: 'Full build command', value: Text(suggested.build), placeholder: 'make -B'},
+    {label: 'Incremental build command', value: Text(suggested->get('incrementalBuild', '')),
+      placeholder: 'make'},
+  ], (values) => {
+    var [address, choice, name, build, incremental_build] = values
+    var incremental = choice ==# 'Yes'
+
+    if name->empty() || build->empty()
+      Error('The configuration needs a project name and a full build command')
+      return
+    elseif incremental && incremental_build->empty()
+      Error('An incremental build needs an incremental build command')
+      return
+    endif
+
+    Execute('codesonar.initConf', {project: name, build: build, incremental: incremental,
+      incrementalBuild: incremental ? incremental_build : '', hubAddress: address},
+      OpenWorkspaceConf)
+  })
+enddef
+
+# Opens the configuration of the workspace. Without its section, a form
+# asks for the hub project, the build command and HUB_ADDRESS first.
 export def Conf()
-  Execute('codesonar.project', {createConf: true}, OpenConf)
+  Execute('codesonar.project', null, (project) => {
+    if project.section
+      OpenWorkspaceConf(project)
+    else
+      InitConf(project)
+    endif
+  })
 enddef
 
-# Sends the settings of the server after a change.
-def SendSettings()
-  Running().sendNotification('workspace/didChangeConfiguration', {settings: {codesonar: ServerSettings()}})
-enddef
-
+# Writes the presets into the workspace configuration.
 def SetPresets(names: list<string>)
-  var settings = ServerSettings()
-  settings.analyze = settings->get('analyze', {})->extend({presets: names})
-  SendSettings()
-  Message(names->empty() ? 'Analyses use no presets' : $'Analyses use the presets {names->join(", ")}')
+  Execute('codesonar.configureAnalysis', {presets: names}, (options) => {
+    var conf = options.conf->fnamemodify(':~:.')
+    Message(names->empty() ? $'Analyses use no presets ({conf})'
+      : $'Analyses use the presets {names->join(", ")} ({conf})')
+  })
 enddef
 
-# Highlights the names of presets, ticked ones differently.
 def DefinePresetHighlights()
   highlight default link CodeSonarPresetName Identifier
   highlight default link CodeSonarPresetTicked Special
@@ -1131,27 +1257,134 @@ export def PresetLines(presets: list<dict<any>>): list<dict<any>>
   ], 'CodeSonarPreset'))
 enddef
 
-# <Space> ticks a preset, <C-D>, <C-U>, g and G page, <CR> uses the
-# ticked presets.
-def PresetFilter(presets: list<dict<any>>, winid: number, key: string): bool
+const CONFIG_HIGHLIGHTS = {Changed: 'WarningMsg', None: 'Comment'}
+
+def DefineConfigHighlights()
+  DefinePresetHighlights()
+
+  for [name, group] in CONFIG_HIGHLIGHTS->items()
+    execute $'highlight default link CodeSonarConfig{name} {group}'
+
+    if prop_type_get($'CodeSonarConfig{name}')->empty()
+      prop_type_add($'CodeSonarConfig{name}', {highlight: $'CodeSonarConfig{name}'})
+    endif
+  endfor
+enddef
+
+# The lines of a choice of presets or checks: the items that contain the
+# filter text. choice.shown are their items.
+export def ChoiceLines(choice: dict<any>): list<dict<any>>
+  var filter = choice.filter->tolower()
+  choice.shown = choice.items->copy()->filter((_, item) =>
+    filter->empty() || choice.Text(item)->tolower()->stridx(filter) >= 0)
+
+  if choice.shown->empty()
+    return [Line([[$'Nothing contains "{choice.filter}"', 'None']], 'CodeSonarConfig')]
+  endif
+
+  return choice.Lines(choice.shown)
+enddef
+
+def CheckLines(checks: list<dict<any>>): list<dict<any>>
+  return checks->mapnew((_, check) => Line([
+    [check.enabled ? '[x] ' : '[ ] ', ''],
+    [check.class, check.enabled ? 'PresetTicked' : 'PresetName'],
+    [check.enabled != check.default ? '  (changed)' : '', 'ConfigChanged'],
+  ], 'CodeSonar'))
+enddef
+
+const CHOICE_KEYS = '<Space> tick  / filter  <CR> save  q cancel'
+
+def ChoiceTitle(choice: dict<any>): string
+  if choice.typing
+    return $' /{choice.filter}_ '
+  endif
+
+  var filter = choice.filter->empty() ? '' : $'  /{choice.filter}'
+  return $' {choice.title}{filter}: {CHOICE_KEYS} '
+enddef
+
+def UpdateChoice(winid: number, choice: dict<any>)
+  winid->popup_settext(ChoiceLines(choice))
+  winid->popup_setoptions({title: ChoiceTitle(choice)})
+enddef
+
+# <Space> ticks, "/" filters while typing (<CR> ends the filter, <Esc>
+# clears it), <C-D>, <C-U>, g and G page, <CR> saves.
+def ChoiceFilter(choice: dict<any>, winid: number, key: string): bool
+  if choice.typing
+    if key ==# "\<CR>"
+      choice.typing = false
+    elseif key ==# "\<Esc>"
+      choice.typing = false
+      choice.filter = ''
+    elseif key ==# "\<BS>"
+      choice.filter = choice.filter->slice(0, -1)
+    elseif key->strchars() == 1 && key =~# '\p'
+      choice.filter ..= key
+    else
+      return true
+    endif
+
+    UpdateChoice(winid, choice)
+    win_execute(winid, 'normal! gg')
+    return true
+  endif
+
   var line = line('.', winid)
 
-  if key ==# ' '
-    presets[line - 1].selected = !presets[line - 1].selected
-    winid->popup_settext(PresetLines(presets))
-  elseif key ==# "\<C-D>" || key ==# "\<C-U>" || key ==# 'g' || key ==# 'G'
+  if key ==# '/'
+    choice.typing = true
+    UpdateChoice(winid, choice)
+  elseif key ==# ' '
+    if line <= len(choice.shown)
+      choice.Toggle(choice.shown[line - 1])
+      UpdateChoice(winid, choice)
+    endif
+  elseif key ==# "\<CR>"
+    winid->popup_close(1)
+  elseif key ==# "\<Esc>" && !choice.filter->empty()
+    choice.filter = ''
+    UpdateChoice(winid, choice)
+  elseif key ==# 'q' || key ==# "\<Esc>" || key ==# "\<C-C>"
+    winid->popup_close(-1)
+  elseif key ==# 'j' || key ==# "\<Down>"
+    win_execute(winid, 'normal! j')
+  elseif key ==# 'k' || key ==# "\<Up>"
+    win_execute(winid, 'normal! k')
+  elseif SCROLL->has_key(key)
     win_execute(winid, $'normal! {SCROLL[key]}')
-  else
-    return MenuFilter({}, {}, 0, winid, key)
   endif
 
   return true
 enddef
 
-def PresetsChosen(presets: list<dict<any>>, _: number, result: number)
-  if result > 0
-    SetPresets(presets->copy()->filter((_, p) => p.selected)->map((_, p) => p.name))
-  endif
+# A popup to tick presets or checks. choice has the items and functions:
+# Text(item) for the filter, Lines(items), Toggle(item) and Save() when
+# the choice is saved.
+def ShowChoice(choice: dict<any>, indent: number = 4)
+  popup_clear()
+  DefineConfigHighlights()
+  choice->extend({filter: '', typing: false, shown: []})
+  var winid = popup_create(ChoiceLines(choice), PopupAttrs({
+    title: ChoiceTitle(choice),
+    zindex: 1000,
+    cursorline: true,
+    mapping: false,
+    wrap: true,
+    maxwidth: min([100, &columns - 4]),
+    maxheight: max([5, &lines - 6]),
+    padding: [0, 1, 0, 1],
+    scrollbar: true,
+    filter: (id, key) => ChoiceFilter(choice, id, key),
+    callback: (_, result) => {
+      if result > 0
+        choice.Save()
+      endif
+    },
+  }))
+  # Long lines continue below the start of their text.
+  win_execute(winid, $'setlocal linebreak breakindent breakindentopt=shift:{indent}')
 enddef
 
 def ChoosePresets(presets: list<dict<any>>)
@@ -1160,35 +1393,47 @@ def ChoosePresets(presets: list<dict<any>>)
     return
   endif
 
-  var attrs: dict<any> = {
-    title: ' CodeSonar presets: <Space> tick, <CR> use ',
-    zindex: 1000,
-    cursorline: true,
-    mapping: false,
-    wrap: true,
-    maxheight: max([5, &lines - 6]),
-    maxwidth: min([100, &columns - 4]),
-    padding: [0, 1, 0, 1],
-    scrollbar: true,
-    filter: function(PresetFilter, [presets]),
-    callback: function(PresetsChosen, [presets]),
-  }
-
-  try
-    attrs = call('lsp#options#PopupConfigure', ['CodeAction', attrs])
-  catch
-    attrs.border = []
-  endtry
-
-  DefinePresetHighlights()
-  var winid = popup_create(PresetLines(presets), attrs)
-  # Long descriptions continue below their start: after "[ ] ", the names
-  # and two spaces.
-  win_execute(winid, $'setlocal linebreak breakindent breakindentopt=shift:{NameWidth(presets) + 6}')
+  ShowChoice({
+    title: 'CodeSonar presets',
+    items: presets,
+    Text: (p) => p.name .. ' ' .. (type(p.description) == v:t_string ? p.description : ''),
+    Lines: (shown) => PresetLines(shown),
+    Toggle: (p) => {
+      p.selected = !p.selected
+    },
+    Save: () => SetPresets(presets->copy()->filter((_, p) => p.selected)->map((_, p) => p.name)),
+  }, NameWidth(presets) + 6)
 enddef
 
-# Chooses the presets of analyses: :CodeSonarPresets [preset ...] sets
-# them, without arguments a menu shows those of the installation.
+def ChooseChecks(options: dict<any>)
+  var checks = options.checks->map((_, c) => c->extend({chosen: c.enabled}))
+  var languages = checks->mapnew((_, c) => c.language)->sort()->uniq()
+
+  ShowChoice({
+    title: $'CodeSonar checks ({languages->join(", ")})',
+    items: checks,
+    Text: (c) => c.class,
+    Lines: (shown) => CheckLines(shown),
+    Toggle: (c) => {
+      c.enabled = !c.enabled
+    },
+    Save: () => {
+      var changed = checks->copy()->filter((_, c) => c.enabled != c.chosen)
+      Execute('codesonar.configureAnalysis',
+        {checks: changed->mapnew((_, c) => ({class: c.class, enabled: c.enabled}))},
+        (result) => Message($'Saved the checks in {result.conf->fnamemodify(":~:.")}'))
+    },
+  })
+enddef
+
+# Chooses the checks of analyses, which the workspace configuration keeps.
+export def Checks()
+  Execute('codesonar.analysisOptions', null, ChooseChecks)
+enddef
+
+# Chooses the presets of analyses, which the workspace configuration
+# keeps: :CodeSonarPresets [preset ...] sets them, without arguments a
+# popup shows those of the installation.
 export def Presets(...names: list<string>)
   if !names->empty()
     if !Running()->empty()
