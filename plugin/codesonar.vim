@@ -31,6 +31,10 @@ def Init()
   endif
 enddef
 
+# The vimrc defines the server entry, yegappan/lsp registers it on
+# VimEnter.
+codesonar.Prepare()
+
 augroup CodeSonar
   autocmd!
   autocmd User LspProgressUpdate codesonar.ProgressUpdated()

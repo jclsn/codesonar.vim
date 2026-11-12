@@ -40,35 +40,33 @@ Install the server from the codesonar-lsp repository: >
 
 	cargo install --path .
 <
-Configure the hub in your vimrc: >
+Configure the server like your other language servers of yegappan/lsp, in
+|g:codesonar|, e.g. in ~/.vim/lsp/codesonar.vim: >
 
-	g:codesonar = {
-	  hub: {
-	    url: 'http://nas:7340',
-	    username: 'lspuser',
-	    passwordFile: '~/.config/codesonar/password',
-	  },
-	  analyze: {buildCommand: 'make -B'},
-	}
-<
-If your vimrc registers its language servers with |LspAddServer()|
-itself, build the configuration with codesonar#Server() instead, e.g. in
-~/.vim/lsp/codesonar.vim: >
-
-	let codesonar = codesonar#Server(#{
-	      \ hub: #{url: 'http://nas:7340', username: 'lspuser'},
-	      \ })
+	let codesonar = #{
+	      \ name: 'codesonar',
+	      \ path: 'codesonar-lsp',
+	      \ initializationOptions: #{
+	      \   hub: #{
+	      \     url: 'http://nas:7340',
+	      \     username: 'lspuser',
+	      \     passwordFile: '~/.config/codesonar/password',
+	      \   },
+	      \ },
+	      \ }
 	call LspAddServer([codesonar])
 <
-The settings become |g:codesonar|, and the plugin does not register the
-server itself.
+The plugin adds its handlers to the entry before yegappan/lsp starts the
+server, so define it in your vimrc, not later. Without g:codesonar, the
+plugin registers a server without settings itself, e.g. for
+|:CodeSonarConnect|.
 
 The server shows the newest finished analysis of the hub project of the
 workspace. Without hub.project, it detects the project: from the project
 files of an earlier analysis, like "mixxx.prj_files", else by the name of
 the workspace folder. To show an exported SARIF file instead: >
 
-	g:codesonar = {sarifFile: 'codesonar.sarif'}
+	initializationOptions: #{sarifFile: 'codesonar.sarif'}
 <
 The server starts with the first C or C++ file of a workspace. The workspace
 is the closest directory above the file with a "codesonar.conf", a
@@ -136,8 +134,8 @@ The commands need a running server, so use them in a file of the workspace.
 			<CR>			use the ticked presets
 			q <Esc>			cancel
 		With arguments, analyses use these presets. The choice lasts
-		until Vim exits; to keep it, set analyze.presets in
-		|g:codesonar|. The shown analysis stays.
+		until Vim exits; to keep it, set analyze.presets in the
+		settings of |g:codesonar|. The shown analysis stays.
 
 :CodeSonarProjects                                        *:CodeSonarProjects*
 		Choose another project of the hub.
@@ -255,15 +253,23 @@ CodeSonarPresetTicked		ticked presets (Special)
 4. SETTINGS                                                *codesonar-settings*
 
                                                               *g:codesonar*
-g:codesonar holds the settings of the server, see the README of
-codesonar-lsp, and these settings of the plugin:
+g:codesonar is the server entry of yegappan/lsp, see |lsp-server-add|. The
+plugin completes it with these defaults:
 
-path		The server command. Default: "codesonar-lsp".
-args		Arguments of the server. Default: [].
-filetypes	File types the server starts for. Default: ["c", "cpp"].
+name		"codesonar"
+path		"codesonar-lsp"
+filetype	["c", "cpp"]
+rootSearch	["codesonar.conf", ".codesonar", ".git"]
+
+and with its handlers in customNotificationHandlers and
+customRequestHandlers. Further keys are settings of the plugin:
+
 browser		Command that opens hub links. Default: Vim's |:Open|.
 statusline	Add the progress to the status line of vim-airline and
 		lightline, see |codesonar#Progress()|. Default: true.
+
+initializationOptions holds the settings of the server, see the README of
+codesonar-lsp.
 
 The most common server settings:
 

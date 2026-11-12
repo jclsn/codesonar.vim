@@ -34,16 +34,23 @@ Plug 'yegappan/lsp'
 Plug '~/Workspace/codesonar.vim'
 ```
 
-Configure the hub in your vimrc:
+Configure the server in your vimrc like your other language servers of
+yegappan/lsp. The plugin completes the entry in `g:codesonar` with its
+handlers, and further keys like `browser` are settings of the plugin:
 
 ```vim
-g:codesonar = {
-  hub: {
-    url: 'http://nas:7340',
-    username: 'lspuser',
-    passwordFile: '~/.config/codesonar/password',
-  },
-}
+let codesonar = #{
+      \ name: 'codesonar',
+      \ path: 'codesonar-lsp',
+      \ initializationOptions: #{
+      \   hub: #{
+      \     url: 'http://nas:7340',
+      \     username: 'lspuser',
+      \     passwordFile: '~/.config/codesonar/password',
+      \   },
+      \ },
+      \ }
+call LspAddServer([codesonar])
 ```
 
 See `:help codesonar` for the commands and settings.

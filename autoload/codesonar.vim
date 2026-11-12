@@ -3,8 +3,6 @@ vim9script
 # commands of the server. All CodeSonar logic lives in the server.
 
 const NAME = 'codesonar'
-# Settings of the plugin, not of the server.
-const PLUGIN_KEYS = ['path', 'args', 'filetypes', 'browser', 'statusline']
 const TYPES = {1: 'E', 2: 'W', 3: 'I', 4: 'N'}
 const EXPLAIN = 'codesonar.explain'
 # Highlight groups of explanations, linked to standard groups.
@@ -38,6 +36,8 @@ var server: dict<any> = {}
 var status: dict<any> = {loaded: false}
 var analyze_job: job
 
+# The server entry of yegappan/lsp in g:codesonar. Besides its keys, it
+# has the settings of the plugin, e.g. browser.
 def Settings(): dict<any>
   return get(g:, 'codesonar', {})
 enddef
@@ -63,9 +63,9 @@ export def Current(): dict<any>
   return status
 enddef
 
-# The settings sent to the server: g:codesonar without the plugin's keys.
+# The settings of the server: the initializationOptions of g:codesonar.
 export def ServerSettings(): dict<any>
-  return Settings()->deepcopy()->filter((key, _) => PLUGIN_KEYS->index(key) < 0)
+  return Settings()->get('initializationOptions', {})
 enddef
 
 def Loaded(lspserver: dict<any>, notification: dict<any>)
@@ -97,7 +97,7 @@ var spinner_frame = 0
 # "CodeSonar ⠹ Downloading 4.2 MB". Empty when it is idle.
 export def Progress(): string
   for info in g:->get('LspProgress', {})->values()
-    if info.serverName != NAME
+    if info.serverName != ServerName()
       continue
     endif
 
@@ -191,50 +191,58 @@ export def OpenUrl(url: string)
 enddef
 
 # Whether the server configuration was handed out to be registered.
-var configured = false
-
-# The server configuration for g:LspAddServer(), for setups that register
-# their servers themselves, e.g. in ~/.vim/lsp/codesonar.vim: >
-#   let codesonar = codesonar#Server(#{hub: #{url: 'http://hub:7340'}})
-# Non-empty settings become g:codesonar. The plugin then does not
-# register the server itself.
-export def Server(settings: dict<any> = {}): dict<any>
-  if !settings->empty()
-    g:codesonar = settings
-  endif
-
-  configured = true
-  var options = Settings()
-
-  return {
+# Completes a server entry of yegappan/lsp with what the plugin needs:
+# its handlers and defaults for the keys that are not set.
+export def Complete(entry: dict<any>): dict<any>
+  entry->extend({
     name: NAME,
-    filetype: options->get('filetypes', ['c', 'cpp']),
-    path: options->get('path', 'codesonar-lsp'),
-    args: options->get('args', []),
-    initializationOptions: ServerSettings(),
+    filetype: ['c', 'cpp'],
+    path: 'codesonar-lsp',
+    initializationOptions: {},
     rootSearch: ['codesonar.conf', '.codesonar', '.git'],
     features: {completion: false},
-    customNotificationHandlers: {'codesonar/loading': Loading, 'codesonar/loaded': Loaded},
-    customRequestHandlers: {'window/showDocument': ShowDocument},
-  }
+  }, 'keep')
+  entry.customNotificationHandlers = entry->get('customNotificationHandlers', {})
+    ->extend({'codesonar/loading': Loading, 'codesonar/loaded': Loaded})
+  entry.customRequestHandlers = entry->get('customRequestHandlers', {})
+    ->extend({'window/showDocument': ShowDocument})
+  return entry
 enddef
 
-# Registers the server with yegappan/lsp, unless the configuration was
-# registered from codesonar#Server() already.
+# Completes the server entry in g:codesonar, before yegappan/lsp registers
+# it with the other servers of the vimrc, e.g. in ~/.vim/lsp/codesonar.vim: >
+#   let codesonar = #{
+#         \ name: 'codesonar',
+#         \ path: 'codesonar-lsp',
+#         \ initializationOptions: #{hub: #{url: 'http://hub:7340'}},
+#         \ }
+#   call LspAddServer([codesonar])
+export def Prepare()
+  if type(get(g:, 'codesonar', v:none)) == v:t_dict
+    Complete(g:codesonar)
+  endif
+enddef
+
+# Registers a server entry with yegappan/lsp if the vimrc has none.
 export def Register()
   if !exists('*g:LspAddServer')
     Error('The plugin yegappan/lsp is not installed')
     return
   endif
 
-  if !configured
-    g:LspAddServer([Server()])
+  if !exists('g:codesonar')
+    g:codesonar = Complete({})
+    g:LspAddServer([g:codesonar])
   endif
 
   # The explain code action is shown here instead of in the server.
   if exists('*g:LspRegisterCmdHandler')
     g:LspRegisterCmdHandler(EXPLAIN, ExplainAction)
   endif
+enddef
+
+def ServerName(): string
+  return Settings()->get('name', NAME)
 enddef
 
 # The running server, from any buffer.
@@ -244,7 +252,7 @@ def Running(): dict<any>
   endif
 
   try
-    server = call('lsp#buffer#CurbufGetServerByName', [NAME])
+    server = call('lsp#buffer#CurbufGetServerByName', [ServerName()])
   catch
     server = {}
   endtry
@@ -1084,17 +1092,14 @@ export def Conf()
   Execute('codesonar.project', {createConf: true}, OpenConf)
 enddef
 
-# Sends g:codesonar to the server after a change.
+# Sends the settings of the server after a change.
 def SendSettings()
   Running().sendNotification('workspace/didChangeConfiguration', {settings: {codesonar: ServerSettings()}})
 enddef
 
 def SetPresets(names: list<string>)
-  if !exists('g:codesonar')
-    g:codesonar = {}
-  endif
-
-  g:codesonar.analyze = g:codesonar->get('analyze', {})->extend({presets: names})
+  var settings = ServerSettings()
+  settings.analyze = settings->get('analyze', {})->extend({presets: names})
   SendSettings()
   Message(names->empty() ? 'Analyses use no presets' : $'Analyses use the presets {names->join(", ")}')
 enddef
