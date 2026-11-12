@@ -34,6 +34,15 @@ DOUBLE_FREE_RULES = [
     {"link": "CERT-CPP:OOP54-CPP", "url": "https://links.codesonar.com/cert-cpp/",
      "relationship": "follows", "rule_text": "Gracefully handle self-copy assignment"},
 ]
+# The analyses of project test_project, which the tests may delete.
+ANALYSES = [
+    {"analysis": "test_project initial", "started": "2026-11-09T22:28:29Z",
+     "state": "DAEMON", "url": "/analysis/3.json"},
+    {"analysis": "test_project running", "started": "2026-11-09T23:00:00Z",
+     "state": "ANALYZING", "url": "/analysis/5.json"},
+    {"analysis": "test_project fixes", "started": "2026-11-09T22:40:40Z",
+     "state": "FINISHED", "url": "/analysis/4.json"},
+]
 TOKEN = "4/token"
 expired = {"once": False}
 
@@ -58,6 +67,8 @@ class Hub(BaseHTTPRequestHandler):
         self.log()
         length = int(self.headers.get("Content-Length", 0))
         form = self.rfile.read(length).decode()
+        if self.path == "/project/2.json" and "remove_analysis_id=" in form:
+            return self.delete_analysis(form)
         if self.path != "/session/create-basic-auth/" or "key=bearer" not in form:
             return self.reply(404, "Not Found", "text/plain")
         expected = "Basic " + base64.b64encode(b"lspuser:secret").decode()
@@ -65,6 +76,19 @@ class Hub(BaseHTTPRequestHandler):
             return self.reply(403, json.dumps(
                 {"status": 403, "error": "Permission Denied: Invalid user name or password."}))
         self.reply(200, json.dumps({"bearer": TOKEN, "user": {"name": "lspuser"}}))
+
+    def delete_analysis(self, form):
+        """Deletes like the form of the project page, but lspuser may not
+        delete analysis 4."""
+        if self.headers.get("Authorization") != "Bearer " + TOKEN:
+            return self.reply(403, json.dumps({"status": 403, "error": "Permission Denied"}))
+        analysis_id = int(form.split("remove_analysis_id=")[1].split("&")[0])
+        if analysis_id == 4:
+            return self.reply(403, json.dumps({"status": 403, "error": "Permission Denied"}))
+        ANALYSES[:] = [row for row in ANALYSES if row["url"] != f"/analysis/{analysis_id}.json"]
+        self.reply(200, json.dumps({"change": {"results": [{
+            "action": "remove_analysis", "item": {"type": "analysis", "id": analysis_id},
+            "result": "success", "message": "Removed"}]}}))
 
     def do_GET(self):
         self.log()
@@ -80,14 +104,12 @@ class Hub(BaseHTTPRequestHandler):
                 {"project": "test_project", "url": "/project/2.json"},
             ]}))
         if self.path == "/project/2.json":
-            return self.reply(200, json.dumps({"rows": [
-                {"analysis": "test_project initial", "started": "2026-11-09T22:28:29Z",
-                 "state": "DAEMON", "url": "/analysis/3.json"},
-                {"analysis": "test_project running", "started": "2026-11-09T23:00:00Z",
-                 "state": "ANALYZING", "url": "/analysis/5.json"},
-                {"analysis": "test_project fixes", "started": "2026-11-09T22:40:40Z",
-                 "state": "FINISHED", "url": "/analysis/4.json"},
-            ]}))
+            return self.reply(200, json.dumps({"rows": ANALYSES}))
+        analysis = next((row for row in ANALYSES if row["url"] == self.path), None)
+        if analysis:
+            return self.reply(200, json.dumps({
+                "id": int(self.path[len("/analysis/"):-len(".json")]), "name": analysis["analysis"],
+                "state": analysis["state"], "project": {"id": 2, "name": "test_project"}}))
         if self.path in ("/analysis/3-allwarnings.sarif", "/analysis/4-allwarnings.sarif"):
             return self.reply(200, open(sarif_file, "rb").read(), "application/sarif+json")
         if self.path == "/analysis/3-files.json" and source_dir:

@@ -81,10 +81,20 @@ def g:Test_2_chooses_an_analysis()
 
   var id = Popup()
   var lines = PopupLines(id)
-  assert_equal(3, lines->len())
+  assert_equal(5, lines->len())
   assert_match('^  \+5  test_project running .*\[ANALYZING\]$', lines[0])
   assert_match('^\*  \+4  test_project fixes', lines[1])
   assert_match('^  \+3  test_project initial', lines[2])
+  # The keys below the analyses, which the cursor skips.
+  assert_equal(['', '<CR> show   d delete on hub   q close'], lines[3 : 4])
+  assert_equal(['CodeSonarMenuKey', 'CodeSonarMenuHint'],
+    prop_list(5, {bufnr: winbufnr(id)})[0 : 1]->mapnew((_, p) => p.type))
+
+  feedkeys('kk', 'xt')
+
+  assert_equal(2, line('.', id))
+
+  feedkeys('jj', 'xt')
 
   id->popup_close(3)
 
@@ -94,6 +104,59 @@ def g:Test_2_chooses_an_analysis()
   # The hub keeps the analyzed sources of analysis 3.
   assert_equal(13, Status().counts.unchanged)
   helpers.WaitFor(() => DiagCount() == 8)
+enddef
+
+def Menu(old: number, items: number): number
+  helpers.WaitFor(() => popup_list()->len() == 1 && popup_list()[0] != old
+    && PopupLines(popup_list()[0])->len() == items + 2)
+  return popup_list()[0]
+enddef
+
+def Dialog(menu: number): number
+  helpers.WaitFor(() => popup_list()->len() == 1 && popup_list()[0] != menu)
+  return popup_list()[0]
+enddef
+
+def g:Test_2a_deletes_an_analysis_after_confirmation()
+  Open('main.c')
+  codesonar.Analyses()
+  var id = Popup()
+
+  feedkeys('d', 'xt')
+
+  var dialog = Dialog(id)
+  assert_match('^Delete analysis 5 "test_project running" of test_project from the hub? '
+    .. 'This cannot be undone\.$', PopupLines(dialog)[0])
+
+  # Declining shows the menu again, on the same analysis.
+  feedkeys('n', 'xt')
+
+  id = Menu(dialog, 3)
+  assert_equal(1, line('.', id))
+  assert_true(helpers.HubLog()->match('^POST /project/') < 0)
+
+  feedkeys('d', 'xt')
+  dialog = Dialog(id)
+
+  feedkeys('y', 'xt')
+
+  id = Menu(dialog, 2)
+  assert_match('^  \+4  test_project fixes', PopupLines(id)[0])
+  assert_match('^\*  \+3  test_project initial', PopupLines(id)[1])
+  assert_match('Deleted analysis 5 "test_project running"', execute('messages'))
+  assert_equal('3', Status().hubId, 'the shown analysis stays')
+
+  # lspuser may not delete analysis 4.
+  feedkeys('d', 'xt')
+  dialog = Dialog(id)
+
+  feedkeys('y', 'xt')
+
+  id = Menu(dialog, 2)
+  assert_match('The hub user lspuser may not delete analysis 4 (Permission Denied)',
+    execute('messages'))
+
+  id->popup_close(-1)
 enddef
 
 def g:Test_3_fills_the_quickfix_list()
@@ -340,9 +403,12 @@ def g:Test_9_connects_and_chooses_a_project()
   Open('main.c')
 
   codesonar.Connect()
+
   var id = Popup()
-  assert_equal(['1  mixxx', '2  test_project'], PopupLines(id))
+  assert_equal(['1  mixxx', '2  test_project', '', '<CR> choose   q close'], PopupLines(id))
+
   id->popup_close(2)
+
   helpers.WaitFor(() => Status()->get('hubId', '') ==# '4' && Status().counts.unchanged == 0)
 
   helpers.StopHub()
