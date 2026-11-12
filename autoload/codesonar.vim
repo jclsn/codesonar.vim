@@ -952,6 +952,11 @@ export def Explain()
 enddef
 
 def OpenConf(project: dict<any>)
+  if type(project->get('workspaceConf', null)) == v:t_string
+    execute 'split' fnameescape(project.workspaceConf)
+    return
+  endif
+
   execute 'split' fnameescape(project.conf)
 
   if project.created

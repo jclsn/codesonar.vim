@@ -106,10 +106,12 @@ The commands need a running server, so use them in a file of the workspace.
 		Moving the cursor closes it as well.
 
 :CodeSonarConf                                                *:CodeSonarConf*
-		Open the configuration file of the CodeSonar project in a
-		split, e.g. to add WARNING_FILTER rules. If there is none yet,
-		it is created from the template.conf of CodeSonar, as the
-		first analysis would.
+		Open the configuration file of the workspace in a split, e.g.
+		to add WARNING_FILTER rules: codesonar.conf in its root, see
+		|codesonar-incremental|. Without it, open the configuration
+		file of the CodeSonar project. If there is none yet, it is
+		created from the template.conf of CodeSonar, as the first
+		analysis would.
 
 :CodeSonarConnect [url [user]]                            *:CodeSonarConnect*
 		Sign in to a hub, asking for the password, and choose one of
@@ -175,6 +177,22 @@ plain 'statusline' needs the function: >
 	set laststatus=2
 	set statusline=%f\ %h%m%r%=%{codesonar#Progress()}\ \ %l,%c%V\ %P
 <
+                                                     *codesonar-incremental*
+|:CodeSonarAnalyze| passes codesonar.conf in the root of the workspace to
+CodeSonar with -conf-file, if it exists. CodeSonar reads it after the
+configuration of the project, so it only needs the settings that differ,
+e.g.: >
+
+	INCREMENTAL_BUILD = Yes
+	WARNING_FILTER += discard path:/build/
+<
+Analyses are incremental unless INCREMENTAL_BUILD is "No" in one of the
+files: each one is a child of the previous and only needs what was
+compiled since then. So the first analysis builds with
+analyze.buildCommand ("make -B"), later ones with
+analyze.incrementalBuildCommand ("make"). After you changed files,
+|:CodeSonarAnalyze| updates the analysis with just these files.
+
                                                        *codesonar-highlight*
 The explanation popup uses these highlight groups, linked by default to the
 group in parentheses:
@@ -247,7 +265,14 @@ pathMappings	Paths from the analysis machine to local paths, e.g.
 changed		Warnings in code changed since the analysis: "hide" (the
 		default) or "mark" to show them as hints.
 analyze.buildCommand
-		Build command of |:CodeSonarAnalyze|. Default: "make -B".
+		Build command of |:CodeSonarAnalyze|. It builds everything,
+		since CodeSonar only sees what is compiled. Default: "make -B".
+analyze.incrementalBuildCommand
+		Build command of incremental analyses, see
+		|codesonar-incremental|. Default: "make".
+analyze.confFile
+		Configuration file of the workspace, see
+		|codesonar-incremental|. Default: "codesonar.conf".
 analyze.presets	CodeSonar presets of |:CodeSonarAnalyze|, e.g.
 		['misrac2025', 'cert'].
 analyze.projectFile
