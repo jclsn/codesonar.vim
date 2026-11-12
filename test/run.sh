@@ -16,6 +16,9 @@ export AIRLINE_PLUGIN LIGHTLINE_PLUGIN
 : "${CODESONAR_LSP:=$(command -v codesonar-lsp)}"
 [ -x "$CODESONAR_LSP" ] || { echo "codesonar-lsp not found, set CODESONAR_LSP" >&2; exit 1; }
 export CODESONAR_LSP
+# Keeps the downloaded analyses of the tests away from the user's.
+export XDG_CACHE_HOME="$PWD/test/results/cache"
+rm -rf "$XDG_CACHE_HOME"
 [ $# -gt 0 ] || set -- test/test_*.vim
 status=0
 

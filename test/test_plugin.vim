@@ -83,10 +83,13 @@ def g:Test_2_chooses_an_analysis()
   var lines = PopupLines(id)
   assert_equal(5, lines->len())
   assert_match('^  \+5  test_project running .*\[ANALYZING\]$', lines[0])
-  assert_match('^\*  \+4  test_project fixes', lines[1])
-  assert_match('^  \+3  test_project initial', lines[2])
+  assert_match('^\*  \+4  test_project fixes .*  \[cached\]$', lines[1])
+  assert_match('^  \+3  test_project initial  [^ ]*$', lines[2])
+
   # The keys below the analyses, which the cursor skips.
-  assert_equal(['', '<CR> show   <Space> show/hide   d delete on hub   q close'], lines[3 : 4])
+  assert_equal(['',
+    '<CR> show   <Space> show/hide   x delete locally   d delete on hub   q close'],
+    lines[3 : 4])
   assert_equal(['CodeSonarMenuKey', 'CodeSonarMenuHint'],
     prop_list(5, {bufnr: winbufnr(id)})[0 : 1]->mapnew((_, p) => p.type))
 
@@ -206,6 +209,39 @@ def g:Test_2c_toggles_the_analysis()
   CodeSonarToggle
 
   helpers.WaitFor(() => Status()->get('hubId', '') ==# shown && DiagCount() > 0)
+enddef
+
+def g:Test_2d_deletes_local_copies()
+  Open('main.c')
+  codesonar.Analyses()
+  var id = Popup()
+
+  assert_match('^\*  \+3  test_project initial .*  \[cached\]$', PopupLines(id)[1])
+  var downloads = helpers.HubLog()->filter((_, l) => l =~# '^GET /analysis/3-allwarnings')->len()
+
+  feedkeys('jx', 'xt')
+
+  helpers.WaitFor(() => PopupLines(id)[1] !~# 'cached')
+  assert_match('CodeSonar: Deleted the local copy of analysis 3', execute('messages'))
+
+  feedkeys('x', 'xt')
+
+  assert_match('CodeSonar: Analysis 3 has no local copy', execute('messages'))
+
+  # Shown again, it is downloaded again.
+  feedkeys(' ', 'xt')
+
+  helpers.WaitFor(() => PopupLines(id)[1] =~# '^ ')
+
+  feedkeys(' ', 'xt')
+
+  helpers.WaitFor(() => PopupLines(id)[1] =~# '^\*.*\[cached\]$')
+  assert_equal(downloads + 1,
+    helpers.HubLog()->filter((_, l) => l =~# '^GET /analysis/3-allwarnings')->len())
+
+  id->popup_close(-1)
+
+  helpers.WaitFor(() => Status().counts.unverified < 13)
 enddef
 
 def g:Test_3_fills_the_quickfix_list()
