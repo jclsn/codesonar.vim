@@ -159,6 +159,25 @@ def g:Test_2a_deletes_an_analysis_after_confirmation()
   id->popup_close(-1)
 enddef
 
+def Ignore(_: any)
+enddef
+
+def g:Test_2c_toggles_the_analysis()
+  Open('main.c')
+  helpers.WaitFor(() => DiagCount() > 0)
+  var shown = Status().hubId
+
+  CodeSonarToggle
+
+  helpers.WaitFor(() => !Status().loaded && DiagCount() == 0)
+  assert_match('CodeSonar: Hiding the analysis\.\.\.', execute('messages'))
+
+  # Toggled again, the same analysis is shown.
+  CodeSonarToggle
+
+  helpers.WaitFor(() => Status()->get('hubId', '') ==# shown && DiagCount() > 0)
+enddef
+
 def g:Test_3_fills_the_quickfix_list()
   Open('main.c')
 
