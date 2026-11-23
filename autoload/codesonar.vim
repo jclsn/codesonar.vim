@@ -5,6 +5,9 @@ vim9script
 const NAME = 'codesonar'
 const TYPES = {1: 'E', 2: 'W', 3: 'I', 4: 'N'}
 const EXPLAIN = 'codesonar.explain'
+const RESOLVE = 'codesonar.resolve'
+# The resolutions of :CodeSonarResolve and those of the server.
+const RESOLUTIONS = {fixed: 'fixed', 'false-positive': 'falsePositive'}
 # Highlight groups of explanations, linked to standard groups.
 const HIGHLIGHTS = {
   Title: 'Title',
@@ -235,9 +238,11 @@ export def Register()
     g:LspAddServer([g:codesonar])
   endif
 
-  # The explain code action is shown here instead of in the server.
+  # The explain code action is shown here instead of in the server, and
+  # the outcome of resolving warnings in the style of the plugin.
   if exists('*g:LspRegisterCmdHandler')
     g:LspRegisterCmdHandler(EXPLAIN, ExplainAction)
+    g:LspRegisterCmdHandler(RESOLVE, ResolveAction)
   endif
 enddef
 
@@ -293,8 +298,8 @@ export def Summary(info: dict<any>): string
 
   var counts = info.counts
   var text = $'{info.name}: {info.shown} of {info.total} warnings shown'
-  var details = ['unchanged', 'moved', 'changed', 'unverified']
-    ->filter((_, k) => counts[k] > 0)
+  var details = ['unchanged', 'moved', 'changed', 'unverified', 'resolved']
+    ->filter((_, k) => counts->get(k, 0) > 0)
     ->map((_, k) => $'{counts[k]} {k}')
 
   return details->empty() ? text : $'{text} ({details->join(", ")})'
@@ -311,6 +316,7 @@ const STATUS_HIGHLIGHTS = {
   Moved: 'Identifier',
   Changed: 'WarningMsg',
   Unverified: 'Comment',
+  Resolved: 'Special',
   Preset: 'Identifier',
   Hint: 'Comment',
 }
@@ -361,8 +367,8 @@ export def StatusLines(info: dict<any>): list<dict<any>>
       [string(info.total), 'Number'], [' shown', '']])]
     var counts: list<list<string>> = []
 
-    for kind in ['unchanged', 'moved', 'changed', 'unverified']
-      if info.counts[kind] > 0
+    for kind in ['unchanged', 'moved', 'changed', 'unverified', 'resolved']
+      if info.counts->get(kind, 0) > 0
         counts += [[counts->empty() ? '' : '  ', ''], [$'{info.counts[kind]} {kind}', kind->substitute('^.', '\u&', '')]]
       endif
     endfor
@@ -1064,6 +1070,40 @@ enddef
 
 def ExplainAction(command: dict<any>)
   Execute(EXPLAIN, command->get('arguments', [null])[0], ShowExplanations)
+enddef
+
+def ResolveAction(command: dict<any>)
+  ResolveWith(command->get('arguments', [{}])[0])
+enddef
+
+# Resolves the warnings in the cursor line on the hub, like the code
+# actions: "fixed" or "false-positive".
+export def Resolve(resolution: string)
+  if !RESOLUTIONS->has_key(resolution)
+    Error($'Unknown resolution "{resolution}": use {RESOLUTIONS->keys()->sort()->join(" or ")}')
+    return
+  endif
+
+  ResolveWith({
+    uri: call('lsp#util#LspFileToUri', [expand('%:p')]),
+    range: {start: {line: line('.') - 1, character: 0}, end: {line: line('.'), character: 0}},
+    resolution: RESOLUTIONS[resolution],
+  })
+enddef
+
+# The server tells the outcome, which is shown here.
+def ResolveWith(argument: dict<any>)
+  Execute(RESOLVE, argument->extendnew({quiet: true}), (result) => {
+    if result.resolved > 0
+      Message(result.message)
+    else
+      Error(result.message)
+    endif
+  })
+enddef
+
+export def CompleteResolutions(lead: string, _: string, _: number): list<string>
+  return RESOLUTIONS->keys()->sort()->filter((_, r) => r->stridx(lead) == 0)
 enddef
 
 # Explains the warnings in the cursor line, like the code action.

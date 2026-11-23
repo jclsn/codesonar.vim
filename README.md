@@ -8,6 +8,8 @@ warnings whose code changed since the analysis. This plugin registers the
 server with [yegappan/lsp] and adds what LSP has no counterpart for:
 
 - choose, show, hide and delete the analyses of the hub project
+- resolve warnings on the hub as fixed or as false positives, with a code
+  action or `:CodeSonarResolve`
 - explain warnings in a popup, with the events that lead to them and the
   rules they may violate
 - run `codesonar analyze` for the workspace, incrementally, with the hub,

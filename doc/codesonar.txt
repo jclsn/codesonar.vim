@@ -27,8 +27,9 @@ for them, e.g.: >
 	:LspDiag next		go to the next warning
 	:LspDiag current	show the warning at the cursor
 	:LspHover		explain the warning at the cursor
-	:LspCodeAction		apply a fix, explain the warning or open it
-				on the hub
+	:LspCodeAction		apply a fix, explain the warning, open it
+				on the hub or mark it as fixed or as a
+				false positive there
 <
 Requirements: Vim 9.1, yegappan/lsp and the codesonar-lsp server in $PATH.
 |:CodeSonarAnalyze| needs the CodeSonar command line tools.
@@ -174,13 +175,21 @@ The commands need a running server, so use them in a file of the workspace.
 		Open the warning at the cursor on the hub, or else the shown
 		analysis.
 
+:CodeSonarResolve {resolution}                            *:CodeSonarResolve*
+		Resolve the warnings in the cursor line on the hub, like the
+		code actions: "fixed" sets their state to Fixed,
+		"false-positive" their finding to False Positive. The hub
+		keeps it for later analyses, and resolved warnings are not
+		shown any more. Your hub user needs the permission to change
+		warnings.
+
 :CodeSonarRefresh                                          *:CodeSonarRefresh*
 		Load the shown analysis again.
 
 :CodeSonarStatus                                            *:CodeSonarStatus*
 		Show the status in a popup: the shown analysis with its page
 		on the hub, how many of its warnings are unchanged, moved,
-		changed and unverified, and the hub and presets of new
+		changed, unverified and resolved, and the hub and presets of new
 		analyses. "o" opens the analysis on the hub, "q" closes the
 		popup.
 
