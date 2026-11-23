@@ -28,8 +28,9 @@ for them, e.g.: >
 	:LspDiag current	show the warning at the cursor
 	:LspHover		explain the warning at the cursor
 	:LspCodeAction		apply a fix, explain the warning, open it
-				on the hub or mark it as fixed or as a
-				false positive there
+				on the hub, mark it as fixed or as a
+				false positive there, or disable its check
+				in codesonar.conf
 <
 Requirements: Vim 9.1, yegappan/lsp and the codesonar-lsp server in $PATH.
 |:CodeSonarAnalyze| needs the CodeSonar command line tools.
@@ -159,7 +160,8 @@ The commands need a running server, so use them in a file of the workspace.
 		checks of the CodeSonar installation, ticked if they are on.
 		Checks that differ from CodeSonar's default are marked
 		"(changed)"; the workspace configuration keeps rules for
-		them.
+		them. Warnings of checks that are off are not shown. The
+		"Disable check" code action turns off the check of a warning.
 
 :CodeSonarProjects                                        *:CodeSonarProjects*
 		Choose another project of the hub.

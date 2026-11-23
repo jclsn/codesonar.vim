@@ -6,6 +6,7 @@ const NAME = 'codesonar'
 const TYPES = {1: 'E', 2: 'W', 3: 'I', 4: 'N'}
 const EXPLAIN = 'codesonar.explain'
 const RESOLVE = 'codesonar.resolve'
+const DISABLE_CHECK = 'codesonar.disableCheck'
 # The resolutions of :CodeSonarResolve and those of the server.
 const RESOLUTIONS = {fixed: 'fixed', 'false-positive': 'falsePositive'}
 # Highlight groups of explanations, linked to standard groups.
@@ -243,6 +244,7 @@ export def Register()
   if exists('*g:LspRegisterCmdHandler')
     g:LspRegisterCmdHandler(EXPLAIN, ExplainAction)
     g:LspRegisterCmdHandler(RESOLVE, ResolveAction)
+    g:LspRegisterCmdHandler(DISABLE_CHECK, DisableCheckAction)
   endif
 enddef
 
@@ -1070,6 +1072,20 @@ enddef
 
 def ExplainAction(command: dict<any>)
   Execute(EXPLAIN, command->get('arguments', [null])[0], ShowExplanations)
+enddef
+
+# The code action that disables the check of a warning, with the outcome
+# in the style of the plugin.
+def DisableCheckAction(command: dict<any>)
+  var argument = command->get('arguments', [{}])[0]
+
+  Execute(DISABLE_CHECK, argument->extendnew({quiet: true}), (result) => {
+    if result.disabled
+      Message(result.message)
+    else
+      Error(result.message)
+    endif
+  })
 enddef
 
 def ResolveAction(command: dict<any>)

@@ -10,6 +10,7 @@ server with [yegappan/lsp] and adds what LSP has no counterpart for:
 - choose, show, hide and delete the analyses of the hub project
 - resolve warnings on the hub as fixed or as false positives, with a code
   action or `:CodeSonarResolve`
+- disable the check of a warning in `codesonar.conf`, with a code action
 - explain warnings in a popup, with the events that lead to them and the
   rules they may violate
 - run `codesonar analyze` for the workspace, incrementally, with the hub,
