@@ -3,7 +3,7 @@
 Implements the endpoints the plugin uses, with user "lspuser" and
 password "secret". Requests are logged to PORT_FILE.log.
 """
-import base64, json, os, sys
+import base64, json, os, sys, urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 port_file, sarif_file = sys.argv[1], sys.argv[2]
@@ -43,6 +43,8 @@ ANALYSES = [
     {"analysis": "test_project fixes", "started": "2026-11-09T22:40:40Z",
      "state": "FINISHED", "url": "/analysis/4.json"},
 ]
+# The state and finding of warnings, by instance id, once they were changed.
+TRIAGE = {}
 TOKEN = "4/token"
 expired = {"once": False}
 
@@ -69,6 +71,8 @@ class Hub(BaseHTTPRequestHandler):
         form = self.rfile.read(length).decode()
         if self.path == "/project/2.json" and "remove_analysis_id=" in form:
             return self.delete_analysis(form)
+        if self.path.startswith("/warninginstance/"):
+            return self.change_warning(form)
         if self.path != "/session/create-basic-auth/" or "key=bearer" not in form:
             return self.reply(404, "Not Found", "text/plain")
         expected = "Basic " + base64.b64encode(b"lspuser:secret").decode()
@@ -89,6 +93,23 @@ class Hub(BaseHTTPRequestHandler):
         self.reply(200, json.dumps({"change": {"results": [{
             "action": "remove_analysis", "item": {"type": "analysis", "id": analysis_id},
             "result": "success", "message": "Removed"}]}}))
+
+    def change_warning(self, form):
+        """Changes a warning like its page, but lspuser may only change
+        states, not findings."""
+        if self.headers.get("Authorization") != "Bearer " + TOKEN or "sel_finding=" in form:
+            return self.reply(403, json.dumps({"status": 403, "error": "Permission Denied"}))
+        instance = self.path[len("/warninginstance/"):-len(".json")]
+        fields = urllib.parse.parse_qs(form)
+        state = json.loads(fields["sel_state"][0])
+        TRIAGE[instance] = {"state": {"id": 3, "label": state}}
+        self.reply(200, json.dumps(self.warning(instance)))
+
+    def warning(self, instance):
+        warning = {"id": int(instance), "group": TRIAGE.get(instance, {})}
+        if instance == "305":
+            warning["categories"] = DOUBLE_FREE_RULES
+        return warning
 
     def do_GET(self):
         self.log()
@@ -120,8 +141,9 @@ class Hub(BaseHTTPRequestHandler):
             sfid = self.path[len("/analysis/3-file"):-len(".json")]
             if sfid in SOURCES:
                 return self.reply(200, json.dumps(listing(SOURCES[sfid])))
-        if self.path == "/warninginstance/305.json":
-            return self.reply(200, json.dumps({"id": 305, "categories": DOUBLE_FREE_RULES}))
+        instance = self.path[len("/warninginstance/"):-len(".json")]
+        if self.path.startswith("/warninginstance/") and (instance == "305" or instance in TRIAGE):
+            return self.reply(200, json.dumps(self.warning(instance)))
         if self.path == "/analysis/9-allwarnings.sarif":
             return self.reply(200, "<html>oops</html>", "text/html")
         self.reply(404, "Analysis not found", "text/plain")

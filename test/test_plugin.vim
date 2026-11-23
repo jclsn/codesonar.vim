@@ -612,6 +612,46 @@ def g:Test_8b_uses_the_configuration_of_the_workspace()
   helpers.WaitFor(() => !codesonar.IsAnalyzing())
 enddef
 
+def g:Test_8c_resolves_warnings_on_the_hub()
+  Open('main.c')
+  helpers.WaitFor(() => Status()->get('loaded', false) == true && DiagCount() > 0)
+  var count = DiagCount()
+
+  # The hub user may not change findings.
+  cursor(45, 1)
+  codesonar.Resolve('false-positive')
+
+  helpers.WaitFor(() => execute('messages') =~ 'may not change warning 300')
+  assert_match('CodeSonar: The hub user lspuser may not change warning 300 (Permission Denied)',
+    execute('messages'))
+  assert_equal(count, DiagCount())
+
+  # But states.
+  cursor(16, 1)
+  codesonar.Resolve('fixed')
+
+  helpers.WaitFor(() => DiagCount() == count - 1)
+  assert_match("CodeSonar: Marked 'Return Pointer to Local' as fixed on the hub", execute('messages'))
+
+  helpers.WaitFor(() => Status().counts->get('resolved', 0) == 1)
+  assert_match('(.*1 resolved)$', codesonar.Summary(Status()))
+
+  # The code action, which the plugin runs to show the outcome itself.
+  var uri = call('lsp#util#LspFileToUri', [expand('%:p')])
+  call('lsp#codeaction#DoCommand', [{}, {command: 'codesonar.resolve', arguments: [{
+    uri: uri, range: {start: {line: 44, character: 0}, end: {line: 45, character: 0}},
+    resolution: 'fixed'}]}])
+
+  helpers.WaitFor(() => DiagCount() == count - 2)
+  assert_match("CodeSonar: Marked 'Unreachable Call' as fixed on the hub", execute('messages'))
+  assert_notmatch('Lsp(codesonar)', execute('messages'))
+
+  # A resolution the server does not know.
+  codesonar.Resolve('later')
+
+  assert_match('CodeSonar: Unknown resolution "later": use false-positive or fixed', execute('messages'))
+enddef
+
 def g:Test_9_connects_and_chooses_a_project()
   Open('main.c')
 
