@@ -652,6 +652,27 @@ def g:Test_8c_resolves_warnings_on_the_hub()
   assert_match('CodeSonar: Unknown resolution "later": use false-positive or fixed', execute('messages'))
 enddef
 
+def g:Test_8d_disables_checks()
+  Open('main.c')
+  helpers.WaitFor(() => Status()->get('loaded', false) == true && DiagCount() > 0)
+  var count = DiagCount()
+
+  # The code action, which the plugin runs to show the outcome itself.
+  call('lsp#codeaction#DoCommand', [{}, {command: 'codesonar.disableCheck',
+    arguments: [{class: 'Double Free'}]}])
+
+  helpers.WaitFor(() => DiagCount() == count - 1)
+  assert_match("CodeSonar: Disabled the check for 'Double Free' in codesonar.conf", execute('messages'))
+  assert_notmatch('Lsp(codesonar)', execute('messages'))
+  assert_true(Conf()->index('WARNING_FILTER += discard class="Double Free"') >= 0)
+
+  # Enabled again, its warning is back.
+  codesonar.Execute('codesonar.configureAnalysis',
+    {checks: [{class: 'Double Free', enabled: true}]}, Ignore)
+
+  helpers.WaitFor(() => DiagCount() == count)
+enddef
+
 def g:Test_9_connects_and_chooses_a_project()
   Open('main.c')
 
