@@ -101,7 +101,9 @@ The commands need a running server, so use them in a file of the workspace.
 :CodeSonarAnalyze [name]                                  *:CodeSonarAnalyze*
 		Run "codesonar analyze" for the workspace in a vertical
 		terminal split. When it succeeds, the new analysis is shown.
-		[name] names the analysis on the hub.
+		[name] names the analysis on the hub. It runs the build
+		commands of the workspace's codesonar.conf, just as "make"
+		runs a Makefile, so only analyze repositories you trust.
 
 :CodeSonarExplain                                          *:CodeSonarExplain*
 		Explain the warnings in the cursor line in a popup, like the
